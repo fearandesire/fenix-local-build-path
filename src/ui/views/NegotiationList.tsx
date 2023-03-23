@@ -49,6 +49,7 @@ const NegotiationList = ({
 		"Mood",
 		"Asking For",
 		"Exp",
+		"Prior Contract",
 		"Negotiate",
 	]);
 
@@ -65,7 +66,6 @@ const NegotiationList = ({
 				willingToNegotiate={p.mood.user.willing}
 			/>
 		);
-
 		return {
 			key: p.pid,
 			data: [
@@ -96,6 +96,12 @@ const NegotiationList = ({
 				}),
 				helpers.formatCurrency(p.mood.user.contractAmount / 1000, "M"),
 				p.contract.exp,
+				helpers.formatCurrency(
+					p.salaries && p.salaries.length > 0
+						? p.salaries[p.salaries.length - 1].amount
+						: 0,
+					"M",
+				),
 				{
 					value: (
 						<div className="d-flex align-items-center">

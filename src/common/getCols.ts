@@ -3118,6 +3118,11 @@ const cols: {
 		sortSequence: ["desc", "asc"],
 		sortType: "number",
 	},
+	"Prior Contract": {
+		desc: "Prior Contract Amount",
+		sortSequence: ["desc", "asc"],
+		sortType: "number",
+	},
 	Prog: {
 		desc: "Progression From Previous Season",
 		sortSequence: ["desc", "asc"],
