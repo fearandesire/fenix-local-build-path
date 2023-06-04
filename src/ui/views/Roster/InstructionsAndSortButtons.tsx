@@ -34,44 +34,58 @@ const InstructionsAndSortButtons = ({
 
 			{editable || godMode ? (
 				<div className="mb-3">
-					<div className="btn-group">
+					<div className="d-flex flex-wrap gap-2">
 						{editable ? (
-							<button
-								className="btn btn-light-bordered"
-								onClick={handleAutoSort}
-							>
-								Auto sort roster
-							</button>
-						) : null}
-						{editable ? (
-							<button
-								className="btn btn-light-bordered"
-								onClick={handleResetPT}
-							>
-								Reset playing time
-							</button>
+							<div className="btn-group">
+								<button
+									className="btn btn-light-bordered"
+									onClick={handleAutoSort}
+								>
+									Auto sort roster
+								</button>
+								<button
+									className="btn btn-light-bordered"
+									onClick={handleResetPT}
+								>
+									Reset playing time
+								</button>
+							</div>
 						) : null}
 						{godMode ? (
-							<button
-								className="btn btn-outline-god-mode"
-								onClick={async () => {
-									const proceed = await confirm(
-										`Are you sure you want to delete all ${players.length} players on this team?`,
-										{
-											okText: "Delete Players",
-										},
-									);
-									if (proceed) {
+							<div className="btn-group">
+								<button
+									className="btn btn-outline-god-mode"
+									onClick={async () => {
 										await toWorker(
 											"main",
-											"removePlayers",
+											"clearInjuries",
 											players.map(p => p.pid),
 										);
-									}
-								}}
-							>
-								Delete players
-							</button>
+									}}
+								>
+									Heal injuries
+								</button>
+								<button
+									className="btn btn-outline-god-mode"
+									onClick={async () => {
+										const proceed = await confirm(
+											`Are you sure you want to delete all ${players.length} players on this team?`,
+											{
+												okText: "Delete Players",
+											},
+										);
+										if (proceed) {
+											await toWorker(
+												"main",
+												"removePlayers",
+												players.map(p => p.pid),
+											);
+										}
+									}}
+								>
+									Delete players
+								</button>
+							</div>
 						) : null}
 					</div>
 					{editable ? (

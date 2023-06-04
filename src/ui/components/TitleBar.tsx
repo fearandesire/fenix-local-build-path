@@ -123,6 +123,12 @@ const TitleBar = () => {
 				{
 					type: "link",
 					league: true,
+					path: genPath(["player_graphs", "all"], season),
+					text: "Player Graphs",
+				},
+				{
+					type: "link",
+					league: true,
 					path: genPath(["player_ratings", "all"], season),
 					text: "Player Ratings",
 				},
@@ -145,11 +151,11 @@ const TitleBar = () => {
 					type: "link",
 					league: true,
 					path: [
-						"player_bios",
+						"player_ratings",
 						`${moreInfoAbbrev}_${moreInfoTid}`,
 						moreInfoSeason,
 					],
-					text: "Player Bios",
+					text: "Player Ratings",
 				},
 				{
 					type: "link",
@@ -165,11 +171,21 @@ const TitleBar = () => {
 					type: "link",
 					league: true,
 					path: [
-						"player_ratings",
+						"player_bios",
 						`${moreInfoAbbrev}_${moreInfoTid}`,
 						moreInfoSeason,
 					],
-					text: "Player Ratings",
+					text: "Player Bios",
+				},
+				{
+					type: "link",
+					league: true,
+					path: [
+						"player_graphs",
+						`${moreInfoAbbrev}_${moreInfoTid}`,
+						moreInfoSeason,
+					],
+					text: "Player Graphs",
 				},
 			],
 		});

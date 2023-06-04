@@ -140,7 +140,7 @@ const initKeptKeys = ({
 
 export const MIN_SEASON = 1947;
 export const MAX_SEASON = 2023;
-const MAX_PHASE = 0;
+const MAX_PHASE = PHASE.PLAYOFFS;
 
 const seasons: { key: string; value: string }[] = [];
 for (let i = MAX_SEASON; i >= MIN_SEASON; i--) {
@@ -232,7 +232,6 @@ type State = {
 	pendingInitialLeagueInfo: boolean;
 	allKeys: string[];
 	keptKeys: string[];
-	expandOptions: boolean;
 	settings: Omit<Settings, "numActiveTeams">;
 	rebuildAbbrevPending?: string;
 };
@@ -304,9 +303,6 @@ type Action =
 			gameAttributes: Record<string, unknown>;
 			defaultSettings: State["settings"];
 			startingSeason: number;
-	  }
-	| {
-			type: "toggleExpandOptions";
 	  };
 
 const getTeamRegionName = (teams: NewLeagueTeam[], tid: number) => {
@@ -356,7 +352,8 @@ const getSettingsFromGameAttributes = (
 			if (
 				key === "noStartingInjuries" ||
 				key === "randomization" ||
-				key === "realStats"
+				key === "realStats" ||
+				key === "giveMeWorstRoster"
 			) {
 				continue;
 			}
@@ -586,12 +583,6 @@ const reducer = (state: State, action: Action): State => {
 			};
 		}
 
-		case "toggleExpandOptions":
-			return {
-				...state,
-				expandOptions: !state.expandOptions,
-			};
-
 		default:
 			throw new Error();
 	}
@@ -713,7 +704,6 @@ const NewLeague = (props: View<"newLeague">) => {
 				pendingInitialLeagueInfo: true,
 				allKeys,
 				keptKeys,
-				expandOptions: false,
 				settings,
 				rebuildAbbrevPending: rebuildInfo?.abbrev,
 			};
@@ -826,23 +816,16 @@ const NewLeague = (props: View<"newLeague">) => {
 			});
 
 			let type: string = state.customize;
-			let type2 = type;
 			if (type === "real") {
 				type = String(state.season);
-				type2 += `-${state.season}`;
 			}
 			if (type === "legends") {
 				type = String(state.legend);
-				type2 += `-${state.legend}`;
 			}
 			analyticsEvent("new_league", {
 				league_type: type,
 				team: teamRegionName,
 				league_id: lid,
-			});
-			analyticsEvent("select_content", {
-				content_type: "new_league",
-				item_id: type2,
 			});
 
 			realtimeUpdate([], `/l/${lid}`);
@@ -1067,7 +1050,7 @@ const NewLeague = (props: View<"newLeague">) => {
 	}
 	if (state.season === MAX_SEASON && state.phase > MAX_PHASE) {
 		invalidSeasonPhaseMessage = `Sorry, I'm not allowed to share the results of the ${MAX_SEASON} ${
-			(PHASE_TEXT as any)[MAX_PHASE + 1]
+			(PHASE_TEXT as any)[MAX_PHASE]
 		} yet.`;
 	}
 
@@ -1140,6 +1123,7 @@ const NewLeague = (props: View<"newLeague">) => {
 										onChange={event => {
 											setStartingSeason(event.target.value);
 										}}
+										inputMode="numeric"
 									/>
 								</div>
 							) : null}
@@ -1197,7 +1181,7 @@ const NewLeague = (props: View<"newLeague">) => {
 												{invalidSeasonPhaseMessage}
 											</div>
 										) : (
-											<div className="text-muted mt-1">
+											<div className="text-body-secondary mt-1">
 												{state.season} in BBGM is the {state.season - 1}-
 												{String(state.season).slice(2)} season.
 											</div>
@@ -1300,17 +1284,13 @@ const NewLeague = (props: View<"newLeague">) => {
 								</div>
 								{!state.settings.equalizeRegions ? (
 									<PopText
-										className="text-muted"
+										className="text-body-secondary"
 										tid={state.tid}
 										teams={displayedTeams}
 										numActiveTeams={displayedTeams.length}
 									/>
 								) : (
-									<span className="text-muted">
-										Region population: equal
-										<br />
-										Size: normal
-									</span>
+									<span className="text-body-secondary">Population: equal</span>
 								)}
 							</div>
 
@@ -1340,7 +1320,9 @@ const NewLeague = (props: View<"newLeague">) => {
 										</option>
 									) : null}
 								</select>
-								<span className="text-muted">{descriptions.difficulty}</span>
+								<span className="text-body-secondary">
+									{descriptions.difficulty}
+								</span>
 							</div>
 
 							<div className="text-center mt-3">

@@ -21,6 +21,7 @@ const Chart = ({
 	phase,
 	season,
 	seasonsToPlot,
+	stat,
 	teams,
 	title,
 	valueKey,
@@ -32,8 +33,9 @@ const Chart = ({
 	"phase" | "season" | "seasonsToPlot" | "teams"
 > & {
 	className?: string;
+	stat: string;
 	title: string;
-	valueKey: "ptsPct" | "winp" | "stat";
+	valueKey: "ptsPct" | "winp" | "stat" | "statTeam";
 	xDomain: [number, number];
 	yScale: ScaleLinear<number, number, never>;
 	yTickFormat?: (x: number) => string;
@@ -100,7 +102,7 @@ const Chart = ({
 
 					return (
 						<svg
-							width={width + margin.left + margin.right}
+							width={parent.width}
 							height={HEIGHT + margin.top + margin.bottom}
 						>
 							<Group transform={`translate(${margin.left},${margin.top})`}>
@@ -207,6 +209,11 @@ const Chart = ({
 						tied: tooltipData.tied,
 					})}
 					{tooltipData.roundsWonText ? `, ${tooltipData.roundsWonText}` : null}
+					<br />
+					{helpers.roundStat(tooltipData.stat ?? 0, "ws")} {stat} (total)
+					<br />
+					{helpers.roundStat(tooltipData.statTeam ?? 0, "ws")} {stat} (with{" "}
+					{tooltipData.abbrev})
 				</TooltipWithBounds>
 			) : null}
 			<div
@@ -271,6 +278,7 @@ const Charts = ({
 				phase={phase}
 				season={season}
 				seasonsToPlot={seasonsToPlot}
+				stat={stat}
 				teams={teams}
 				title={`Team ${
 					usePts ? "point" : "winning"
@@ -287,9 +295,23 @@ const Charts = ({
 				phase={phase}
 				season={season}
 				seasonsToPlot={seasonsToPlot}
+				stat={stat}
 				teams={teams}
-				title={`${stat} by assets received in trade`}
+				title={`${stat} by assets received in trade (total)`}
 				valueKey={"stat"}
+				xDomain={xDomain}
+				yScale={yScale2}
+			/>
+
+			<Chart
+				className="mt-3"
+				phase={phase}
+				season={season}
+				seasonsToPlot={seasonsToPlot}
+				stat={stat}
+				teams={teams}
+				title={`${stat} by assets received in trade (with team)`}
+				valueKey={"statTeam"}
 				xDomain={xDomain}
 				yScale={yScale2}
 			/>

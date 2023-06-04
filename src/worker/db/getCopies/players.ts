@@ -346,15 +346,19 @@ const getCopies = async (
 		const playerStore = idb.league.transaction("players").store;
 		let fromDB = [];
 		if (watch) {
-			fromDB.push(...(await getAll(playerStore.index("watch"), 1, filter)));
+			// undefined for key returns all of the players with values, since the ones with watch/noteBool missing are not included in this index
+			fromDB.push(
+				...(await getAll(playerStore.index("watch"), undefined, filter)),
+			);
 		}
 		if (note) {
 			// If watch and note both set, don't include record twice
 			const pidsDB = new Set(fromDB.map(p => p.pid));
 			fromDB.push(
-				...(await getAll(playerStore.index("noteBool"), 1, filter)).filter(
-					p => !pidsDB.has(p.pid),
-				),
+				// undefined for key returns all of the players with values, since the ones with watch/noteBool missing are not included in this index
+				...(
+					await getAll(playerStore.index("noteBool"), undefined, filter)
+				).filter(p => !pidsDB.has(p.pid)),
 			);
 		}
 
@@ -367,7 +371,7 @@ const getCopies = async (
 		return mergeByPk(
 			fromDB,
 			fromCacheAll.filter(
-				p => (watch && p.watch === 1) || (note && p.noteBool === 1),
+				p => (watch && p.watch !== undefined) || (note && p.noteBool === 1),
 			),
 			"players",
 			type,

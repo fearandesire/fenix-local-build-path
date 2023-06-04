@@ -131,6 +131,7 @@ const Input = ({
 						disabled={selectValue !== "custom"}
 						onChange={onChange}
 						value={parsed[1]}
+						inputMode="decimal"
 					/>
 				</div>
 			);
@@ -146,7 +147,17 @@ const Input = ({
 			);
 		}
 	} else {
-		inputElement = <input type="text" {...commonProps} />;
+		const inputModes: Partial<Record<typeof type, "decimal" | "numeric">> = {
+			float: "decimal",
+			float1000: "decimal",
+			floatOrNull: "decimal",
+			int: "numeric",
+			intOrNull: "numeric",
+		};
+
+		inputElement = (
+			<input type="text" {...commonProps} inputMode={inputModes[type]} />
+		);
 	}
 
 	if (decoration === "currency") {
@@ -282,7 +293,7 @@ const Option = ({
 				) : null}
 			</div>
 			{description && !showDescriptionLong ? (
-				<div className="text-muted settings-description mt-1">
+				<div className="text-body-secondary settings-description mt-1">
 					{description}
 				</div>
 			) : null}
@@ -300,7 +311,7 @@ const Option = ({
 							duration: 0.3,
 							type: "tween",
 						}}
-						className="text-muted settings-description mt-1"
+						className="text-body-secondary settings-description mt-1"
 					>
 						{descriptionLong}
 					</m.div>
@@ -442,6 +453,7 @@ const SettingsFormOptions = ({
 															type="text"
 															onChange={handleChange(key, type)}
 															value={state[key]}
+															inputMode="numeric"
 														/>
 														<div className="input-group-text">Games</div>
 													</div>

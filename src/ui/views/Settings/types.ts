@@ -53,6 +53,7 @@ export type Key =
 	| "challengeLoseBestPlayer"
 	| "challengeFiredLuxuryTax"
 	| "challengeFiredMissPlayoffs"
+	| "challengeSisyphusMode"
 	| "challengeThanosMode"
 	| "realPlayerDeterminism"
 	| "repeatSeason"
@@ -139,7 +140,12 @@ export type Key =
 	| "saveFactor"
 	| "gender"
 	| "heightFactor"
-	| "weightFactor";
+	| "weightFactor"
+	| "allStarDunk"
+	| "allStarThree"
+	| "minRetireAge"
+	| "numWatchColors"
+	| "giveMeWorstRoster";
 
 export type Category =
 	| "New League"

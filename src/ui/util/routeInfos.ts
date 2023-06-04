@@ -80,6 +80,9 @@ const routeInfos = {
 	"/l/:lid/player_stats/:abbrev/:season": "playerStats",
 	"/l/:lid/player_stats/:abbrev/:season/:statType": "playerStats",
 	"/l/:lid/player_stats/:abbrev/:season/:statType/:playoffs": "playerStats",
+	"/l/:lid/player_graphs": "playerGraphs",
+	"/l/:lid/player_graphs/:seasonX/:statTypeX/:playoffsX/:statX/:seasonY/:statTypeY/:playoffsY/:statY/:minGames":
+		"playerGraphs",
 	"/l/:lid/team_stats": "teamStats",
 	"/l/:lid/team_stats/:season": "teamStats",
 	"/l/:lid/team_stats/:season/:teamOpponent": "teamStats",

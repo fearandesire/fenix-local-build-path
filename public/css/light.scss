@@ -88,6 +88,7 @@ $flag-icon-css-path: "/img/flags";
 // Taken from bootstrap.scss, but with unused things deleted. PurgeCSS would do the same thing from just importing the main bootstrap.scss file, but it has some false positives (such as offcanvas placeholder).
 @import "node_modules/bootstrap/scss/functions";
 @import "node_modules/bootstrap/scss/variables";
+@import "node_modules/bootstrap/scss/variables-dark";
 @import "node_modules/bootstrap/scss/maps";
 @import "node_modules/bootstrap/scss/mixins";
 @import "node_modules/bootstrap/scss/utilities";
@@ -503,9 +504,38 @@ $jersey-number-width: 15px;
 	text-decoration: none;
 }
 
-.watch-active,
-.watch-active:hover {
-	color: $danger;
+// Same as bar-graph
+.watch-active-1,
+.watch-active-1:hover {
+	color: $red;
+}
+.watch-active-2,
+.watch-active-2:hover {
+	color: $green;
+}
+.watch-active-3,
+.watch-active-3:hover {
+	color: $blue;
+}
+.watch-active-4,
+.watch-active-4:hover {
+	color: $yellow;
+}
+.watch-active-5,
+.watch-active-5:hover {
+	color: $indigo;
+}
+.watch-active-6,
+.watch-active-6:hover {
+	color: $pink;
+}
+.watch-active-7,
+.watch-active-7:hover {
+	color: $cyan;
+}
+.watch-active-8,
+.watch-active-8:hover {
+	color: $orange;
 }
 
 .pt-modifier-select {
@@ -688,7 +718,6 @@ tr.table-warning:hover > td {
 }
 @include media-breakpoint-up(md) {
 	.live-game-affix {
-		position: -webkit-sticky;
 		position: sticky;
 		margin-top: 0;
 		top: 60px;
@@ -697,11 +726,19 @@ tr.table-warning:hover > td {
 		overflow: auto;
 	}
 }
+@include media-breakpoint-down(md) {
+	.live-game-affix-mobile {
+		position: sticky;
+		top: 51px; // 52px leaves a gap for some reason
+
+		// Puts it over sticky column headers
+		z-index: 1;
+	}
+}
 
 // Keep in sync with trade/index.tsx
 @include media-breakpoint-up(md) {
 	.trade-affix {
-		position: -webkit-sticky;
 		position: sticky;
 		top: 60px;
 	}
@@ -1613,7 +1650,7 @@ table.sticky-xxx {
 }
 
 .standings-name {
-	min-width: 90px;
+	min-width: 100px;
 }
 
 @include media-breakpoint-up(sm) {
@@ -1638,7 +1675,7 @@ table.sticky-xxx {
 	transform: rotate(45deg);
 }
 
-// Without this, text-muted doesn't apply to striped rows. That's used for hasTot
+// Without this, text-body-secondary doesn't apply to striped rows. That's used for hasTot
 .table-striped > tbody > tr:nth-of-type(odd) > * {
 	color: inherit;
 }
@@ -1649,4 +1686,8 @@ table.sticky-xxx {
 
 .row-gap-0 {
 	row-gap: 0 !important;
+}
+
+.row-gap-3 {
+	row-gap: 1rem !important;
 }

@@ -63,7 +63,13 @@ const TeamLogo = ({
 	) : null;
 };
 
-const HeadlineScore = ({ boxScore }: { boxScore: any }) => {
+export const HeadlineScore = ({
+	boxScore,
+	small,
+}: {
+	boxScore: any;
+	small?: boolean;
+}) => {
 	// Historical games will have boxScore.won.name and boxScore.lost.name so use that for ordering, but live games
 	// won't. This is hacky, because the existence of this property is just a historical coincidence, and maybe it'll
 	// change in the future.
@@ -73,13 +79,23 @@ const HeadlineScore = ({ boxScore }: { boxScore: any }) => {
 	const t1 =
 		boxScore.lost?.name !== undefined ? boxScore.lost : boxScore.teams[1];
 
-	const className = `d-none d-${boxScore.exhibition ? "md" : "sm"}-inline`;
+	const className = small
+		? "d-none"
+		: `d-none d-${boxScore.exhibition ? "md" : "sm"}-inline`;
 
 	return (
-		<>
-			<h2>
+		<div
+			className={
+				small
+					? "d-flex align-items-center flex-wrap justify-content-between gap-3 row-gap-0 mb-2"
+					: liveGameSim
+					? "d-none d-md-block"
+					: undefined
+			}
+		>
+			<h2 className={small ? "mb-0" : liveGameSim ? "mb-1" : "mb-2"}>
 				{t0.playoffs ? (
-					<span className="text-muted">{t0.playoffs.seed}. </span>
+					<span className="text-body-secondary">{t0.playoffs.seed}. </span>
 				) : null}
 				<TeamNameLink season={boxScore.season} t={t0}>
 					{t0.season !== undefined ? `${t0.season} ` : null}
@@ -88,7 +104,7 @@ const HeadlineScore = ({ boxScore }: { boxScore: any }) => {
 				</TeamNameLink>{" "}
 				{t0.pts},{" "}
 				{t1.playoffs ? (
-					<span className="text-muted">{t1.playoffs.seed}. </span>
+					<span className="text-body-secondary">{t1.playoffs.seed}. </span>
 				) : null}
 				<TeamNameLink season={boxScore.season} t={t1}>
 					{t1.season !== undefined ? `${t1.season} ` : null}
@@ -99,22 +115,38 @@ const HeadlineScore = ({ boxScore }: { boxScore: any }) => {
 				{boxScore.overtime}
 			</h2>
 			{liveGameSim ? (
-				<div className="mb-2">
-					{boxScore.gameOver
-						? "Final score"
-						: boxScore.elamTarget !== undefined
-						? `Elam Ending target: ${boxScore.elamTarget} points`
-						: isSport("baseball")
-						? `${
-								boxScore.teams[0].ptsQtrs.length ===
-								boxScore.teams[1].ptsQtrs.length
-									? "Bottom"
-									: "Top"
-						  } of the ${boxScore.quarter}`
-						: `${boxScore.quarter}, ${boxScore.time} remaining`}
+				<div className={small ? undefined : "mb-2"}>
+					<span className="d-none d-sm-inline">
+						{boxScore.gameOver
+							? "Final score"
+							: boxScore.elamTarget !== undefined
+							? `Elam Ending target: ${boxScore.elamTarget} points`
+							: isSport("baseball")
+							? `${
+									boxScore.teams[0].ptsQtrs.length ===
+									boxScore.teams[1].ptsQtrs.length
+										? "Bottom"
+										: "Top"
+							  } of the ${boxScore.quarter}`
+							: `${boxScore.quarter}, ${boxScore.time} remaining`}
+					</span>
+					<span className="d-sm-none">
+						{boxScore.gameOver
+							? "F"
+							: boxScore.elamTarget !== undefined
+							? `Elam Ending target: ${boxScore.elamTarget} points`
+							: isSport("baseball")
+							? `${
+									boxScore.teams[0].ptsQtrs.length ===
+									boxScore.teams[1].ptsQtrs.length
+										? "B"
+										: "T"
+							  }${boxScore.quarterShort}`
+							: `${boxScore.quarterShort}, ${boxScore.time}`}
+					</span>
 				</div>
 			) : null}
-		</>
+		</div>
 	);
 };
 
@@ -501,7 +533,7 @@ const DetailedScore = ({
 										key={qtr}
 										className={
 											i < qtrs.length - (isSport("baseball") ? 3 : 1)
-												? "text-muted"
+												? "text-body-secondary"
 												: undefined
 										}
 									>

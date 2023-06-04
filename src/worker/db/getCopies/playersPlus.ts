@@ -26,10 +26,9 @@ const processAttrs = (
 ) => {
 	const getSalary = () => {
 		let total = 0;
-		const s = season ?? g.get("season");
 
 		for (const salary of p.salaries) {
-			if (salary.season === s) {
+			if (salary.season === season || season === undefined) {
 				total += salary.amount / 1000;
 			}
 		}
@@ -65,6 +64,17 @@ const processAttrs = (
 			output.draft.abbrev = g.get("teamInfoCache")[output.draft.tid]?.abbrev;
 			output.draft.originalAbbrev =
 				g.get("teamInfoCache")[output.draft.originalTid]?.abbrev;
+		} else if (attr === "draftPosition") {
+			// Estimate pick number from draft round and pick. Would be better to store the real value
+			if (p.draft.round > 0 && p.draft.pick > 0) {
+				output.draftPosition =
+					p.draft.pick + (p.draft.round - 1) * g.get("numActiveTeams");
+			} else {
+				// Undrafted
+				output.draftPosition = Math.round(
+					(0.5 + g.get("numDraftRounds")) * g.get("numActiveTeams"),
+				);
+			}
 		} else if (attr === "contract") {
 			if (g.get("season") === season || season === undefined) {
 				output.contract = helpers.deepCopy(p.contract);
@@ -82,8 +92,10 @@ const processAttrs = (
 				1000; // [millions of dollars]
 		} else if (attr === "abbrev") {
 			output.abbrev = helpers.getAbbrev(p.tid);
-		} else if (attr === "hof" || attr === "watch") {
+		} else if (attr === "hof") {
 			output[attr] = !!p[attr];
+		} else if (attr === "watch") {
+			output[attr] = p[attr] ?? 0;
 		} else if (
 			attr === "injury" &&
 			season !== undefined &&
@@ -172,6 +184,10 @@ const processAttrs = (
 					output.latestTransaction = `God Mode in ${transaction.season}`;
 				} else if (transaction.type === "import") {
 					output.latestTransaction = `Imported in ${transaction.season}`;
+				} else if (transaction.type === "sisyphus") {
+					const abbrev = g.get("teamInfoCache")[transaction.fromTid]?.abbrev;
+					const url = helpers.leagueUrl(["roster", abbrev, transaction.season]);
+					output.latestTransaction = `Sisyphus Mode with <a href="${url}">${abbrev} in ${transaction.season}</a>`;
 				}
 			} else {
 				output.latestTransaction = "";

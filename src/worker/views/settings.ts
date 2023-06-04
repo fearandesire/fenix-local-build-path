@@ -66,6 +66,7 @@ const keys = [
 	"challengeNoRatings",
 	"challengeFiredLuxuryTax",
 	"challengeFiredMissPlayoffs",
+	"challengeSisyphusMode",
 	"challengeThanosMode",
 	"realPlayerDeterminism",
 	"repeatSeason",
@@ -107,6 +108,7 @@ const keys = [
 	"numPlayersThree",
 	"fantasyPoints",
 	"goatFormula",
+	"goatSeasonFormula",
 	"draftPickAutoContract",
 	"draftPickAutoContractPercent",
 	"draftPickAutoContractRounds",
@@ -148,6 +150,12 @@ const keys = [
 	"gender",
 	"heightFactor",
 	"weightFactor",
+	"allStarDunk",
+	"allStarThree",
+	"minRetireAge",
+	"numWatchColors",
+	"giveMeWorstRoster",
+	"groupScheduleSeries",
 ] as const;
 
 export type Settings = Pick<
@@ -160,6 +168,7 @@ export type Settings = Pick<
 		| "tragicDeaths"
 		| "goatFormula"
 		| "numActiveTeams"
+		| "giveMeWorstRoster"
 	>
 > & {
 	repeatSeason: boolean;
@@ -173,7 +182,9 @@ export type Settings = Pick<
 	injuries: InjuriesSetting;
 	tragicDeaths: TragicDeaths;
 	goatFormula: string;
+	goatSeasonFormula: string;
 	confs?: Conf[];
+	giveMeWorstRoster: boolean;
 
 	// undefined in DefaultNewLeagueSettings - then it is not possible to validate some settings that depend on it
 	numActiveTeams: number | undefined;
@@ -241,6 +252,7 @@ const updateSettings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			challengeNoRatings: g.get("challengeNoRatings"),
 			challengeFiredLuxuryTax: g.get("challengeFiredLuxuryTax"),
 			challengeFiredMissPlayoffs: g.get("challengeFiredMissPlayoffs"),
+			challengeSisyphusMode: g.get("challengeSisyphusMode"),
 			challengeThanosMode: g.get("challengeThanosMode"),
 			realPlayerDeterminism: g.get("realPlayerDeterminism"),
 			repeatSeason: !!g.get("repeatSeason"),
@@ -284,6 +296,8 @@ const updateSettings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			fantasyPoints: g.get("fantasyPoints"),
 			tragicDeaths: g.get("tragicDeaths") ?? defaultTragicDeaths,
 			goatFormula: g.get("goatFormula") ?? goatFormula.DEFAULT_FORMULA,
+			goatSeasonFormula:
+				g.get("goatSeasonFormula") ?? goatFormula.DEFAULT_FORMULA_SEASON,
 			draftPickAutoContract: g.get("draftPickAutoContract"),
 			draftPickAutoContractPercent: g.get("draftPickAutoContractPercent"),
 			draftPickAutoContractRounds: g.get("draftPickAutoContractRounds"),
@@ -325,11 +339,17 @@ const updateSettings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			gender: g.get("gender"),
 			heightFactor: g.get("heightFactor"),
 			weightFactor: g.get("weightFactor"),
+			allStarDunk: g.get("allStarDunk"),
+			allStarThree: g.get("allStarThree"),
+			minRetireAge: g.get("minRetireAge"),
+			numWatchColors: g.get("numWatchColors"),
+			groupScheduleSeries: g.get("groupScheduleSeries"),
 
 			// Might as well be undefined, because it will never be saved from this form, only the new league form
 			realDraftRatings: g.get("realDraftRatings") ?? "rookie",
 			randomization: "none",
 			realStats: "none",
+			giveMeWorstRoster: false,
 		};
 
 		return {

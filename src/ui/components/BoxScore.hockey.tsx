@@ -236,7 +236,7 @@ const ScoringSummary = memo(
 							prevQuarter = event.quarter;
 							quarterHeader = (
 								<tr>
-									<td className="text-muted" colSpan={5}>
+									<td className="text-body-secondary" colSpan={5}>
 										{quarterText}
 									</td>
 								</tr>
@@ -252,12 +252,16 @@ const ScoringSummary = memo(
 										{event.t === 0 ? (
 											<>
 												<b>{event.score[0]}</b>-
-												<span className="text-muted">{event.score[1]}</span>
+												<span className="text-body-secondary">
+													{event.score[1]}
+												</span>
 											</>
 										) : (
 											<>
-												<span className="text-muted">{event.score[0]}</span>-
-												<b>{event.score[1]}</b>
+												<span className="text-body-secondary">
+													{event.score[0]}
+												</span>
+												-<b>{event.score[1]}</b>
 											</>
 										)}
 									</td>
@@ -273,7 +277,7 @@ const ScoringSummary = memo(
 										{event.names.length > 1 ? (
 											<>
 												{" "}
-												<span className="text-muted">
+												<span className="text-body-secondary">
 													(assist: {event.names.slice(1).join(", ")})
 												</span>
 											</>
@@ -312,25 +316,33 @@ const BoxScore = ({
 				teams={boxScore.teams}
 			/>
 
-			{boxScore.teams.map(t => (
-				<Fragment key={t.abbrev}>
-					<h2>
-						{t.season !== undefined ? `${t.season} ` : null}
-						{t.region} {t.name}
-					</h2>
-					{["Skaters", "Goalies"].map(title => (
-						<StatsTable
-							key={title}
-							Row={Row}
-							exhibition={boxScore.exhibition}
-							forceRowUpdate={forceRowUpdate}
-							title={title}
-							type={title.toLowerCase() as any}
-							t={t}
-						/>
-					))}
-				</Fragment>
-			))}
+			{boxScore.teams.map((t, i) => {
+				return (
+					<div
+						key={t.abbrev}
+						id={i === 0 ? "scroll-team-1" : "scroll-team-2"}
+						style={{
+							scrollMarginTop: 136,
+						}}
+					>
+						<h2>
+							{t.season !== undefined ? `${t.season} ` : null}
+							{t.region} {t.name}
+						</h2>
+						{["Skaters", "Goalies"].map(title => (
+							<StatsTable
+								key={title}
+								Row={Row}
+								exhibition={boxScore.exhibition}
+								forceRowUpdate={forceRowUpdate}
+								title={title}
+								type={title.toLowerCase() as any}
+								t={t}
+							/>
+						))}
+					</div>
+				);
+			})}
 		</div>
 	);
 };

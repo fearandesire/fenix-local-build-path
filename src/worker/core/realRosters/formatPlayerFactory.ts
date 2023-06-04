@@ -7,14 +7,13 @@ import type {
 	PlayerContract,
 	PlayerInjury,
 } from "../../../common/types";
-import { LATEST_SEASON, LATEST_SEASON_WITH_DRAFT_POSITIONS } from "./getLeague";
+import { LATEST_SEASON } from "./getLeague";
 import getOnlyRatings from "./getOnlyRatings";
 import type { Basketball, Ratings } from "./loadData.basketball";
 import nerfDraftProspect from "./nerfDraftProspect";
 import oldAbbrevTo2020BBGMAbbrev from "./oldAbbrevTo2020BBGMAbbrev";
 import setDraftProspectRatingsBasedOnDraftPosition from "./setDraftProspectRatingsBasedOnDraftPosition";
 import { getEWA } from "../../util/advStats.basketball";
-import findLast from "lodash-es/findLast";
 
 const MINUTES_PER_GAME = 48;
 
@@ -328,11 +327,7 @@ const formatPlayerFactory = async (
 				nerfDraftProspect(currentRatings);
 			}
 
-			if (
-				options.type === "real" &&
-				options.realDraftRatings === "draft" &&
-				draft.year <= LATEST_SEASON_WITH_DRAFT_POSITIONS
-			) {
+			if (options.type === "real" && options.realDraftRatings === "draft") {
 				const age = currentRatings.season! - bornYear;
 				setDraftProspectRatingsBasedOnDraftPosition(currentRatings, age, bio);
 			}
@@ -407,15 +402,16 @@ const formatPlayerFactory = async (
 			awards.some(award => award.type === "Inducted into the Hall of Fame")
 				? 1
 				: undefined;
-		const diedYear = tid === PLAYER.RETIRED ? bio.diedYear : undefined;
+		const diedYear =
+			tid === PLAYER.RETIRED && bio.diedYear <= season
+				? bio.diedYear
+				: undefined;
 
 		let retiredYear;
 		if (ratings.retiredUntil !== undefined) {
-			const lastNonRetiredSeason = findLast(
-				allRatings,
+			const lastNonRetiredSeason = allRatings.findLast(
 				row => row.season < ratings.season && row.retiredUntil === undefined,
 			);
-			console.log("lastNonRetiredSeason", lastNonRetiredSeason);
 			if (lastNonRetiredSeason) {
 				retiredYear = lastNonRetiredSeason.season;
 			} else {

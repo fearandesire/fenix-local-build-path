@@ -35,7 +35,6 @@ import getInjury from "./getInjury";
 
 export const MIN_SEASON = 1947;
 export const LATEST_SEASON = 2023;
-export const LATEST_SEASON_WITH_DRAFT_POSITIONS = 2021;
 export const FIRST_SEASON_WITH_ALEXNOOB_ROSTERS = 2020;
 const FREE_AGENTS_SEASON = 2020;
 
@@ -193,28 +192,6 @@ const getLeague = async (options: GetLeagueOptions) => {
 			return p;
 		});
 
-		// Manually add HoF to retired players who do eventually make the HoF, but have not yet been inducted by the tim ethis season started
-		if (hofSlugs.size > 0) {
-			for (const p of players) {
-				if (hofSlugs.has(p.srID) && !p.hof && p.tid === PLAYER.RETIRED) {
-					p.hof = 1;
-					if (!p.awards) {
-						p.awards = [];
-					}
-
-					const season =
-						options.phase <= PHASE.PLAYOFFS
-							? options.season - 1
-							: options.season;
-
-					p.awards.push({
-						type: "Inducted into the Hall of Fame",
-						season,
-					});
-				}
-			}
-		}
-
 		// Find draft prospects, which can't include any active players
 		const lastPID = Math.max(...players.map(p => p.pid));
 		const draftProspects = await getDraftProspects(
@@ -278,6 +255,11 @@ const getLeague = async (options: GetLeagueOptions) => {
 				p.draft.year = draftYears[i];
 				p.born.year += diff;
 
+				p.draft.tid = -1;
+				p.draft.originalTid = -1;
+				p.draft.round = 0;
+				p.draft.pick = 0;
+
 				if (
 					p.draft.year < options.season ||
 					(p.draft.year === options.season && options.phase > PHASE.DRAFT)
@@ -314,16 +296,28 @@ const getLeague = async (options: GetLeagueOptions) => {
 				} else {
 					// Draft prospect
 					p.tid = PLAYER.UNDRAFTED;
-
 					const rookieRatings = basketball.ratings.find(
 						row => row.slug === p.srID,
 					);
 					if (!rookieRatings) {
 						throw new Error(`No ratings found for "${p.srID}"`);
 					}
-					const ratings = getOnlyRatings(rookieRatings);
-					nerfDraftProspect(ratings);
-					p.ratings = [ratings];
+					const currentRatings = getOnlyRatings(rookieRatings);
+					nerfDraftProspect(currentRatings);
+					p.ratings = [currentRatings];
+					const bio = basketball.bios[p.srID];
+					if (
+						options.type === "real" &&
+						options.realDraftRatings === "draft" &&
+						bio
+					) {
+						const age = p.draft.year + 1 - p.born.year;
+						setDraftProspectRatingsBasedOnDraftPosition(
+							currentRatings,
+							age,
+							bio,
+						);
+					}
 				}
 			}
 		}
@@ -600,6 +594,88 @@ const getLeague = async (options: GetLeagueOptions) => {
 			}
 		}
 
+		// If starting in a playoff where there is a play-in tournament, add the play-in tournament before
+		if (options.phase === PHASE.PLAYOFFS && playoffSeries) {
+			const playIns = basketball.playIns[options.season];
+			if (playIns) {
+				const getTidAndWinp = (abbrev: string) => {
+					const t = initialTeams.find(
+						t => oldAbbrevTo2020BBGMAbbrev(t.srID) === abbrev,
+					);
+					if (!t) {
+						throw new Error("Missing team");
+					}
+					const teamSeason = basketball.teamSeasons[options.season][abbrev];
+					if (!teamSeason) {
+						throw new Error("Missing teamSeason");
+					}
+					const winp = helpers.calcWinp(teamSeason);
+
+					return {
+						tid: t.tid,
+						winp,
+					};
+				};
+
+				const currentPlayoffSeries = playoffSeries.at(-1);
+				if (currentPlayoffSeries) {
+					currentPlayoffSeries.playIns = playIns.map((playIn, cid) => {
+						return playIn.map(matchup => {
+							return {
+								home: {
+									cid,
+									seed: matchup.seeds[0],
+									won: 0,
+									...getTidAndWinp(matchup.abbrevs[0]),
+								},
+								away: {
+									cid,
+									seed: matchup.seeds[1],
+									won: 0,
+									...getTidAndWinp(matchup.abbrevs[1]),
+								},
+							};
+						});
+					});
+
+					const playInSeeds = [7, 8];
+					for (const round of currentPlayoffSeries.series) {
+						for (const matchup of round) {
+							const away = matchup.away;
+							if (away && playInSeeds.includes(away.seed)) {
+								away.pendingPlayIn = true;
+
+								const playInGames = currentPlayoffSeries.playIns[away.cid];
+								let tid;
+								for (const matchup of playInGames) {
+									if (matchup.home.seed === away.seed) {
+										tid = matchup.home.tid;
+										break;
+									} else if (matchup.away?.seed === away.seed) {
+										tid = matchup.away.tid;
+										break;
+									}
+								}
+
+								// Update teamSeason for this team - they did not make the playoffs yet!
+								const teamSeason = initialTeams[away.tid].seasons?.at(-1);
+								if (teamSeason) {
+									teamSeason.playoffRoundsWon = -1;
+								}
+
+								// Needs to be the correct tid from the 7/8 play-in seeds, or it won't be recognized correctly
+								if (tid !== undefined) {
+									away.tid = tid;
+								}
+							}
+						}
+					}
+
+					currentPlayoffSeries.currentRound = -1;
+				}
+			}
+		}
+
 		const awards = getAwards(basketball.awards, players, initialTeams, options);
 
 		// Mark players as retired - don't delete, so we have full season stats and awards.
@@ -621,6 +697,29 @@ const getLeague = async (options: GetLeagueOptions) => {
 				if (p.tid >= 0 && !nextSeasonSlugs.has(p.srID)) {
 					p.tid = PLAYER.RETIRED;
 					(p as any).retiredYear = options.season;
+				}
+			}
+		}
+
+		// Manually add HoF to retired players who do eventually make the HoF, but have not yet been inducted by the tim ethis season started.
+		// This needs to be after the code above which sets retired players, otherwise starting after the playoffs will result in players who retired that year never making the HoF.
+		if (hofSlugs.size > 0) {
+			for (const p of players) {
+				if (hofSlugs.has(p.srID) && !p.hof && p.tid === PLAYER.RETIRED) {
+					p.hof = 1;
+					if (!p.awards) {
+						p.awards = [];
+					}
+
+					const season =
+						options.phase <= PHASE.PLAYOFFS
+							? options.season - 1
+							: options.season;
+
+					p.awards.push({
+						type: "Inducted into the Hall of Fame",
+						season,
+					});
 				}
 			}
 		}
@@ -714,11 +813,7 @@ const getLeague = async (options: GetLeagueOptions) => {
 				const currentRatings = p.ratings[0];
 				currentRatings.season = options.season;
 				nerfDraftProspect(currentRatings);
-				if (
-					options.type === "real" &&
-					options.realDraftRatings === "draft" &&
-					p.draft.year <= LATEST_SEASON_WITH_DRAFT_POSITIONS
-				) {
+				if (options.type === "real" && options.realDraftRatings === "draft") {
 					const age = currentRatings.season! - p.born.year;
 					setDraftProspectRatingsBasedOnDraftPosition(currentRatings, age, {
 						draftRound: p.draft.round,

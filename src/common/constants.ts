@@ -28,7 +28,7 @@ const DRAFT_BY_TEAM_OVR = bySport({
 	hockey: true,
 });
 
-const MAX_SUPPORTED_LEAGUE_VERSION = 53;
+const MAX_SUPPORTED_LEAGUE_VERSION = 54;
 
 const NO_LOTTERY_DRAFT_TYPES: DraftType[] = [
 	"freeAgents",
@@ -485,6 +485,13 @@ const EXHIBITION_GAME_SETTINGS = [
 ] as const;
 
 const MOBILE_AD_BOTTOM_MARGIN = 52;
+
+export const DEPTH_CHART_NAME = bySport({
+	baseball: "Batting Order",
+	basketball: undefined,
+	football: "Depth Chart",
+	hockey: "Lines",
+});
 
 export {
 	AD_DIVS,

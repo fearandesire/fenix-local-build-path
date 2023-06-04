@@ -260,7 +260,7 @@ export type DiscriminateUnion<
 
 export type EventBBGMWithoutKey =
 	| {
-			type: Exclude<LogEventType, "trade">;
+			type: Exclude<LogEventType, "sisyphus" | "trade">;
 			text: string;
 			pids?: number[];
 			dpids?: number[];
@@ -271,6 +271,18 @@ export type EventBBGMWithoutKey =
 			// < 20: somewhat important
 			// >= 20: very important
 			score?: number;
+	  }
+	| {
+			type: "sisyphus";
+			pids: number[];
+			tids: number[];
+			season: number;
+			wonTitle: boolean;
+
+			// For TypeScript, never actually used
+			score?: undefined;
+			text?: undefined;
+			dpids?: undefined;
 	  }
 	| {
 			type: "trade";
@@ -452,6 +464,8 @@ export type GameAttributesLeague = {
 	allStarGame: number | null;
 	allStarNum: number;
 	allStarType: "draft" | "byConf" | "top";
+	allStarDunk: boolean;
+	allStarThree: boolean;
 	autoDeleteOldBoxScores: boolean;
 	brotherRate: number;
 	budget: boolean;
@@ -462,7 +476,8 @@ export type GameAttributesLeague = {
 	challengeLoseBestPlayer: boolean;
 	challengeFiredLuxuryTax: boolean;
 	challengeFiredMissPlayoffs: boolean;
-	challengeThanosMode: boolean;
+	challengeSisyphusMode: boolean;
+	challengeThanosMode: number;
 	thanosCooldownEnd: number | undefined;
 	confs: Conf[];
 	daysLeft: number;
@@ -491,9 +506,11 @@ export type GameAttributesLeague = {
 	gameOver: boolean;
 	gender: "female" | "male";
 	goatFormula?: string;
+	goatSeasonFormula?: string;
 	godMode: boolean;
 	godModeInPast: boolean;
 	gracePeriodEnd: number;
+	groupScheduleSeries: boolean;
 	heightFactor: number;
 	hideDisabledTeams: boolean;
 	hofFactor: number;
@@ -514,6 +531,7 @@ export type GameAttributesLeague = {
 	minContract: number;
 	minContractLength: number;
 	minPayroll: number;
+	minRetireAge: number;
 	minRosterSize: number;
 	names?: NamesLegacy;
 	nextPhase?: Phase;
@@ -531,6 +549,7 @@ export type GameAttributesLeague = {
 	numPlayoffByes: number;
 	numSeasonsFutureDraftPicks: number;
 	numTeams: number;
+	numWatchColors: number;
 	playIn: boolean;
 	playerMoodTraits: boolean;
 	pointsFormula: string;
@@ -775,6 +794,8 @@ export type LogEventType =
 	| "retiredList"
 	| "retiredJersey"
 	| "screenshot"
+	| "sisyphus"
+	| "sisyphusTeam"
 	| "success"
 	| "teamContraction"
 	| "teamExpansion"
@@ -949,6 +970,7 @@ export type LocalStateUI = {
 	lid?: number;
 	liveGameInProgress: boolean;
 	numPeriods: number;
+	numWatchColors: number;
 	phase: number;
 	phaseText: string;
 	playMenuOptions: Option[];
@@ -1168,12 +1190,19 @@ export type PlayerWithoutKey<PlayerRatings = any> = {
 				tid: number;
 				type: "import";
 		  }
+		| {
+				season: number;
+				phase: number;
+				tid: number;
+				type: "sisyphus";
+				fromTid: number;
+		  }
 	)[]; // Only optional cause I'm worried about upgrades
 	value: number;
 	valueNoPot: number;
 	valueFuzz: number;
 	valueNoPotFuzz: number;
-	watch?: 1; // Would rather be boolean, but can't index boolean
+	watch?: number;
 	weight: number;
 	yearsFreeAgent: number;
 
@@ -1357,7 +1386,7 @@ export type ContractInfo = {
 	amount: number;
 	exp: number;
 	released: boolean;
-	watch: boolean;
+	watch: number;
 };
 
 export type ReleasedPlayerWithoutKey = {
@@ -1692,6 +1721,7 @@ export type UpdateEvents = (
 	| "allStarThree"
 	| "firstRun"
 	| "g.goatFormula"
+	| "g.goatSeasonFormula"
 	| "gameAttributes"
 	| "gameSim"
 	| "leagues"

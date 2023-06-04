@@ -1,7 +1,124 @@
-goalie fatigue
-- rather than no goalie fatigue in playoffs, maybe make it a small amount of fatigue?
-  - if i do this, make sure to start best goalie (with fatigue? without fatigue?) in elimination games
-- or, apply constant fatigue to all goalies in playoffs?
+when negotiating with re-sign players, don't remove from list when you press cancel https://old.reddit.com/r/BasketballGM/comments/13472xb/monthly_suggestions_thread/jiffpkf/
+
+bootstrap real dark mode
+- table color variants won't be in until v6 https://getbootstrap.com/docs/5.3/content/tables/#variants
+
+finances revamp
+- count, not $
+- exponential increase in cost, average effect is at 5, cost at 5 is $25m in default BBGM
+  - or exponential decrease in effect? or linear?
+- 2 yr avg
+  - show avg in ui
+  - store cumsum and numgames for current and prev season
+- UI should show current effect and long term effect (after 3 years)
+- get rid of adjustForInflation
+  - what about ticket prices? does this affect them? maybe always adjust ticket prices
+- on mobile, move settings to top of team finances page
+- what should the exact numbers be?
+  - different cost/effect for different categories?
+- TeamSeason.expenses and revenues no longer need to store rank
+- updateRanks
+  - instead, update the average of past 2 seasons
+- helpers.defaultBudgetAmount
+- autoBudgetSettings
+  - call each year for AI teams
+    - does it change over time?
+- show all levels on league finances table
+- upgrade
+  - TeamSeason.expenses and revenues
+    - import
+    - existing league
+  - Team.budget
+    - import
+    - existing league
+- blog
+  - rank isn't fun, like ebay bidding
+  - level is clearer than some arbitrary $ amount that could change with inflation
+  - exponential cost makes maxing out a hard decision
+
+FBGM game sim tweaks
+- running QBs have too many fumbles https://mail.google.com/mail/u/0/#inbox/FMfcgzGsmNSSltTxzttjxSrPPQrkgflZ
+- decrease RB yards per catch https://discord.com/channels/290013534023057409/331882115119448065/1060446696288550963
+- increase scrambling yards per carry https://discord.com/channels/290013534023057409/331882115119448065/1060446696288550963
+
+team graphs
+
+game of the year
+- something based on margin of victory, overtimes, how good the teams are, how the best players performed
+- add ability to save important box scores
+  - performance of deleting box scores each year?
+- https://old.reddit.com/r/BasketballGM/comments/13472xb/monthly_suggestions_thread/jj0zlpi/
+
+player graphs
+- later
+  - click to make tooltip persistent
+  - in addition to x and y axis stats, let user pick one for size of the circles
+  - option to highlight players on a certain team
+    - how to handle TOT?
+    - how to handle career totals
+    - how to handle disabled teams
+  - option to pick individual team for each axis
+  - if x and y are pulling the same season and type, reuse rather than recompute in worker
+  - Minimum games played - replace with eligible leaders?
+    - see playerMeetsCategoryRequirements
+
+catchers never commit errors? https://discord.com/channels/290013534023057409/944392892905037885/1111059257614401587
+- sim bad throws on steals
+- ground balls and infield flies never go to C/P?
+
+when creating a league with differnet historical teams, would be nice to use real player salaries
+- needs to handle teams from your leagues too
+- ideal: add salaryCap to teamInfo and use that to adjust
+
+fielder's choice stay at 1st https://discord.com/channels/290013534023057409/290015591216054273/1107165858834415656
+
+no players historical modes for other sports? https://mail.google.com/mail/u/0/#inbox/FMfcgzGsmXBJTrFzHbgzSLRTxzLbZTlf
+
+frivolities
+- players
+  - Best/Worst MVP, DPOY, ROY, 6MOY, MIP, AS https://old.reddit.com/r/BasketballGM/comments/ovhv1i/monthly_suggestions_thread/h7iovrv/
+    - Also, best to never get there https://old.reddit.com/r/BasketballGM/comments/wd2soz/monthly_suggestions_thread/iig6kdf/
+  - oldest/youngest of any award https://discord.com/channels/290013534023057409/994079396065452132/994079523605860442
+  - would need history of salaryCap
+    - most overpaid, most underpaid (career total)
+    - best contract (maybe WS:contract ratio? or WS minus "expected WS for that contract"?)
+    - worst contract
+  - highest ovr at each age https://discord.com/channels/290013534023057409/331882115119448065/868031573205876778
+- team seasons
+  - most consecutive seasons w/ championships/finals/playoffs/no-playoffs
+  - best playoffs (record in individual playoffs) - annoying to implement in frivolitiesTeamSeasons
+  - oldest/youngest champions https://old.reddit.com/r/BasketballGM/comments/o668ok/a_teams_average_age_weighted_by_minutes_played_is/h2rbp7g/?context=3
+  - GOAT Lab for teams https://discord.com/channels/290013534023057409/331882115119448065/864892186888765502
+  - lowest payroll for championship https://old.reddit.com/r/BasketballGM/comments/ttdazd/monthly_suggestions_thread/i6cctm4/
+- oldest/youngest award winners for each award https://discord.com/channels/290013534023057409/331882115119448065/898189161536839691
+- Youngest and Oldest ever to achieve certain statistical feats like triple doubles and 50 pointers https://discord.com/channels/290013534023057409/331882115119448065/904435732842700810
+- playoffs
+  - playoff seeding, like number of times an 8 seed won @Tuxie93
+  - biggest upsets https://old.reddit.com/r/BasketballGM/comments/10088fu/monthly_suggestions_thread/j415bre/
+- best dunk (scan dunk contest for highest difficulty dunnk completed, and show actual score and probability too)
+- similar to roster continuity, one showing home grown percentage of roster https://old.reddit.com/r/BasketballGM/comments/z99cby/monthly_suggestions_thread/iz2d3xs/
+- longest win/loss streaks
+
+trade summary
+- show how player left team
+  - player.transactions - does it contain enough info to know if it came before/after the current trade? eid?
+  - if not, then scan event log for player, and look for next eid
+  - if trade, link to trade
+  - https://old.reddit.com/r/BasketballGM/comments/137wce5/version_202305040893_trade_summaries_now_include/jiwqha3/?context=3
+
+Show records and logos on mobile game sim? https://discord.com/channels/@me/994804438919295057/1100621506033225829
+
+minimum target for hockey should be 2 goalies https://discord.com/channels/290013534023057409/1098793454676480050/1099076259000111114
+
+in football (and to a lesser extent, hockey and baseball) it's hard to watch a live sim on mobile because it keeps getting bumped off the screen as rows are added to the box score or scoring summary
+
+schedule failing to generate in large league https://discord.com/channels/@me/994804438919295057/1087152130638483526
+- based on https://raw.githubusercontent.com/nicidob/bbgm/master/cbb_roster_2019.json
+- somehow related to numGames, it works with higher numbers (like 36) but not with lower numbers (like 12)
+  - for lower numbers (down to 1) seems to work with odd numbers but not even numbers
+  - for odd number, it seems to work on 1st try. for odd numbers, it has to search, and seems to work better for high numbers
+  - this happens because for even number of teams, it wants to make home=away for all teams, while for odd it knows it can be off by one. that off by one gives it wiggle room when balancing home/away. without that wiggle room, the algorithm searches for one existing game it can swap home/away of and still be valid. but with a small number of games, it may be fairly unlikely you'll find one you can swap
+    - not easy to fix... would have to better pick home/away games so this doens't happen in the first place (rather than random) or allow a chain of swaps rather than one swap to fix it
 
 player rights owned by team
 - players in other league, or otherwise out of league
@@ -35,19 +152,11 @@ rather than showing percentage for match, show actual $ amount https://old.reddi
 
 still too much overtime scoring https://discord.com/channels/290013534023057409/331882115119448065/1061049070753435799
 
-decrease RB yards per catch https://discord.com/channels/290013534023057409/331882115119448065/1060446696288550963
-
-increase scrambling yards per carry https://discord.com/channels/290013534023057409/331882115119448065/1060446696288550963
-
 show previous salary on re-signing table https://old.reddit.com/r/BasketballGM/comments/z99cby/monthly_suggestions_thread/izjihq3/
 
 dedicated page listing all owned draft picks, including links to trades where they were acquired https://old.reddit.com/r/BasketballGM/comments/z99cby/monthly_suggestions_thread/j1a3nws/
 
-sticky score when scrolling box score during live sim https://old.reddit.com/r/BasketballGM/comments/z99cby/monthly_suggestions_thread/j2airjl/
-
 show totals for pts/reb/ast/etc in play by play like "J. Brown Driving layup (12 pts) D. White (3 AST)" https://old.reddit.com/r/BasketballGM/comments/z99cby/monthly_suggestions_thread/j26zhxu/
-
-Noticing the game retiring active players jersey and then forcing the player to wear another number https://discord.com/channels/290013534023057409/290015591216054273/1059251062088945674
 
 wild pitch score in bottom of extra innings does not end game
 - https://discord.com/channels/290013534023057409/944392892905037885/1054912900692717608
@@ -197,6 +306,7 @@ custom awards
   - awards records
   - team records
   - GOAT formula
+- would be nice to support awards that only are awarded some years, like the triple crown
 
 baseballGM: roster composition on Trade page. WAR on resigning page? https://discord.com/channels/290013534023057409/331882115119448065/991842013798473749
 
@@ -221,32 +331,6 @@ take advantage of the ability to bring people back to life
 derived variables in GOAT lab
 
 unify league leaders and award stat leader code, to allow things like BA leader in baseball
-
-frivolities
-- players
-  - Best/Worst MVP, DPOY, ROY, 6MOY, MIP, AS https://old.reddit.com/r/BasketballGM/comments/ovhv1i/monthly_suggestions_thread/h7iovrv/
-    - Also, best to never get there https://old.reddit.com/r/BasketballGM/comments/wd2soz/monthly_suggestions_thread/iig6kdf/
-  - oldest/youngest of any award https://discord.com/channels/290013534023057409/994079396065452132/994079523605860442
-  - would need history of salaryCap
-    - most overpaid, most underpaid (career total)
-    - best contract (maybe WS:contract ratio? or WS minus "expected WS for that contract"?)
-    - worst contract
-  - GOAT Lab for seasons
-  - highest ovr at each age https://discord.com/channels/290013534023057409/331882115119448065/868031573205876778
-  - best rookie season https://old.reddit.com/r/BasketballGM/comments/p5stae/best_rookie_seasons_frivolty/
-- team seasons
-  - most consecutive seasons w/ championships/finals/playoffs/no-playoffs
-  - best playoffs (record in individual playoffs) - annoying to implement in frivolitiesTeamSeasons
-  - oldest/youngest champions https://old.reddit.com/r/BasketballGM/comments/o668ok/a_teams_average_age_weighted_by_minutes_played_is/h2rbp7g/?context=3
-  - GOAT Lab for teams https://discord.com/channels/290013534023057409/331882115119448065/864892186888765502
-  - lowest payroll for championship https://old.reddit.com/r/BasketballGM/comments/ttdazd/monthly_suggestions_thread/i6cctm4/
-- oldest/youngest award winners for each award https://discord.com/channels/290013534023057409/331882115119448065/898189161536839691
-- Youngest and Oldest ever to achieve certain statistical feats like triple doubles and 50 pointers https://discord.com/channels/290013534023057409/331882115119448065/904435732842700810
-- playoffs
-  - playoff seeding, like number of times an 8 seed won @Tuxie93
-  - biggest upsets https://old.reddit.com/r/BasketballGM/comments/10088fu/monthly_suggestions_thread/j415bre/
-- best dunk (scan dunk contest for highest difficulty dunnk completed, and show actual score and probability too)
-- similar to roster continuity, one showing home grown percentage of roster https://old.reddit.com/r/BasketballGM/comments/z99cby/monthly_suggestions_thread/iz2d3xs/
 
 highlight your team when viewing other team's schedule https://discord.com/channels/290013534023057409/331882115119448065/976114143700586537
 
@@ -338,8 +422,6 @@ sticky columns sometimes fail on mobile
 - probably only for 2+ columns - so a JS problem in useStickyXX
 - "It usually happens when I try to sort other columns and sometimes somehow get fixed when I sort another one" https://discord.com/channels/290013534023057409/290015591216054273/943644259498745926
 
-after the Free Agency period, if a player signs with a new team and manually gets a new jersey # then the jersey # also changes for the team that he previously played for https://discord.com/channels/290013534023057409/290015591216054273/940321320569286687
-
 build statues for players https://old.reddit.com/r/BasketballGM/comments/rt7szv/monthly_suggestions_thread/hqsowkj/
 - https://old.reddit.com/message/messages/1akmgqt
 
@@ -413,6 +495,14 @@ new achievements
 - force challenge mode to remain on
 - lose series after being up 3-1 or 3-0
 - brick wall 2 https://twitter.com/IcarusGant/status/1632834755241684997
+- win title X years after sisyphus mode
+- https://old.reddit.com/r/BasketballGM/comments/13472xb/monthly_suggestions_thread/
+  - Expansion to Champion 3: win the title in the first year of an expansion team
+  - No Loyalty: Win a championship with no players having spent 5 years on your team
+  - No Loyalty 2: Win a championship with no players having spent 3 years on your team
+  - No Loyalty 3: Win a championship with no players having played for your team before
+  - Ascendance: Win the championship after missing the playoffs
+  - Ascendance 2: Win the championship after being the worst team in the league
 
 hockey ovr revamp
 - ovrs for skater and goalie. determine skater positions like BBGM, including possibility of hybrid positions like F. cause there's really a fair amount of overlap in what players do
@@ -561,7 +651,9 @@ playoffsByConf should support numConfs!=2
 
 no attendance in baseball https://discord.com/channels/290013534023057409/290015591216054273/1012536651110686742
 
-player being let out of the penalty box at start of overtime? https://discord.com/channels/@me/778760871911751700/879161429335367760
+player being let out of the penalty box at start of overtime?
+- https://discord.com/channels/@me/778760871911751700/879161429335367760
+- https://discord.com/channels/@me/778760871911751700/1106014082819178637
 
 More preset league structures
 - https://discord.com/channels/290013534023057409/331882115119448065/876662349287804938
@@ -894,19 +986,16 @@ add some more built-in teams
     - Istanbul
     - Seoul
     - Taipei
-    - Jerusalem
+    - Jerusalem or Tel Aviv
     - X Cairo
     - Lagos
-    - Johannesburg
+    - Johannesburg or Cape Town
     - Shanghai
   - Cities from Eastern European countries where basketball is popular:
     - X Belgrade
     - X Vilnius or Kaunas
     - Zagreb
     - Sarajevo
-    - Ljubljana
-    - Riga
-    - Skopje
   - Antarctica Penguins
 
 "find players" form
@@ -1011,8 +1100,6 @@ nicidob new ovr formula
 
 FBGM too many very short players
 
-on trade summary page, also show how the player left the team (or if still active/retired). use p.transactions
-
 fuzz
 - nicidob - fix fuzz uniformity so that it's more like 70 +/- 1, 60 +/- 3,  50 +/-5
 
@@ -1070,16 +1157,7 @@ start in any phase
     - need to improve LeagueMenu so fetching leagueInfo depends on both season and phase forms
   - start before expansion draft
   - start before draft lottery
-  - support starting after playoffs even if there is an expansion draft
-    - for 1947/48, ignore weird 2nd round picks and clone 1st round order for 2nd round
-    - expansion team should be selectable
-  - add player stats if phase after regular season
-    - advanced stats will require team stats too... sum up from players?
-    - advanced stats and other missing values, calculate on load?
   - what about changes to settings (like playoff settings, etc), does it need to store previous season's value too?
-  - what about seasons with expansion teams?
-    - tricky for draft, since it should have expansion draft as already happened... maybe disable those years
-      - could get results of expansion draft and assing those players to team!
 
 trade stuff
 - more penalty for bad contracts
@@ -1157,6 +1235,7 @@ salaries wrong after expansion draft? https://cdn.discordapp.com/attachments/290
 
 When changing the jersey number on a player acquired in FA it also changes what that player's jersey number was on his previous team, despite him being signed to a different team now
 - need to treat jerseyNumber like teamSeason stuff (name, etc) - store "latest" in root, and copy from there when making new stats row, if possible
+- https://discord.com/channels/290013534023057409/290015591216054273/940321320569286687
 
 Add game log to player page
 

@@ -52,9 +52,9 @@ export type Basketball = {
 				height: number;
 				college: string;
 				draftYear: number;
-				draftRound: number;
-				draftPick: number;
-				draftAbbrev: string;
+				draftRound?: number;
+				draftPick?: number;
+				draftAbbrev?: string;
 		  }
 		| undefined
 	>;
@@ -134,6 +134,14 @@ export type Basketball = {
 			seeds: [number, number];
 			wons: [number, number];
 		}[]
+	>;
+	playIns: Record<
+		number,
+		// First array is indexed by conference ID, similar to PlayoffSeries["playIns"]
+		{
+			abbrevs: [string, string];
+			seeds: [number, number];
+		}[][]
 	>;
 	expansionDrafts: Record<number, Record<string, string[]>>;
 	retiredJerseyNumbers: Record<

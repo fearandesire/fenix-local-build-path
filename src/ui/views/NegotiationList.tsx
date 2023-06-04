@@ -6,7 +6,7 @@ import {
 	SafeHtml,
 } from "../components";
 import useTitleBar from "../hooks/useTitleBar";
-import { getCols, helpers, logEvent, toWorker } from "../util";
+import { confirm, getCols, helpers, logEvent, toWorker } from "../util";
 import type { View } from "../../common/types";
 import { dataTableWrappedMood } from "../components/Mood";
 import { wrappedPlayerNameLabels } from "../components/PlayerNameLabels";
@@ -54,8 +54,6 @@ const NegotiationList = ({
 
 	const rows = players.map(p => {
 		const negotiateButtons = (
-			// https://github.com/DefinitelyTyped/DefinitelyTyped/issues/20544
-			// @ts-expect-error
 			<NegotiateButtons
 				canGoOverCap={salaryCapType === "none" || salaryCapType === "soft"}
 				capSpace={capSpace}
@@ -168,6 +166,18 @@ const NegotiationList = ({
 				<button
 					className="btn btn-secondary mb-3"
 					onClick={async () => {
+						const proceed = await confirm(
+							`Are you sure you want to re-sign all ${players.length} ${
+								players.length === 1 ? "player" : "players"
+							}?`,
+							{
+								okText: "Re-sign all",
+							},
+						);
+						if (!proceed) {
+							return;
+						}
+
 						const errorMsg = await toWorker("main", "reSignAll", players);
 
 						if (errorMsg) {

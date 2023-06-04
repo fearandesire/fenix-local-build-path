@@ -151,6 +151,10 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"challengeFiredMissPlayoffs",
 		),
+		challengeSisyphusMode: unwrapGameAttribute(
+			defaultGameAttributes,
+			"challengeSisyphusMode",
+		),
 		challengeThanosMode: unwrapGameAttribute(
 			defaultGameAttributes,
 			"challengeThanosMode",
@@ -240,6 +244,7 @@ export const getDefaultSettings = () => {
 		fantasyPoints: unwrapGameAttribute(defaultGameAttributes, "fantasyPoints"),
 		tragicDeaths: defaultTragicDeaths,
 		goatFormula: goatFormula.DEFAULT_FORMULA,
+		goatSeasonFormula: goatFormula.DEFAULT_FORMULA_SEASON,
 		draftPickAutoContract: unwrapGameAttribute(
 			defaultGameAttributes,
 			"draftPickAutoContract",
@@ -335,6 +340,18 @@ export const getDefaultSettings = () => {
 		gender: unwrapGameAttribute(defaultGameAttributes, "gender"),
 		heightFactor: unwrapGameAttribute(defaultGameAttributes, "heightFactor"),
 		weightFactor: unwrapGameAttribute(defaultGameAttributes, "weightFactor"),
+		allStarDunk: unwrapGameAttribute(defaultGameAttributes, "allStarDunk"),
+		allStarThree: unwrapGameAttribute(defaultGameAttributes, "allStarThree"),
+		minRetireAge: unwrapGameAttribute(defaultGameAttributes, "minRetireAge"),
+		numWatchColors: unwrapGameAttribute(
+			defaultGameAttributes,
+			"numWatchColors",
+		),
+		giveMeWorstRoster: false,
+		groupScheduleSeries: unwrapGameAttribute(
+			defaultGameAttributes,
+			"groupScheduleSeries",
+		),
 
 		// This can be undefined, but if the setting is ever displayed to the user, it should default to "rookie"
 		realDraftRatings:

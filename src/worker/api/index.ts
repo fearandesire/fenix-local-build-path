@@ -124,6 +124,7 @@ import {
 import { TOO_MANY_TEAMS_TOO_SLOW } from "../core/season/getInitialNumGamesConfDivSettings";
 import * as exhibitionGame from "./exhibitionGame";
 import { getSummary } from "../views/trade";
+import { getStats, statTypes } from "../views/playerGraphs";
 
 const acceptContractNegotiation = async ({
 	pid,
@@ -387,7 +388,7 @@ const checkParticipationAchievement = async (
 	}
 };
 
-const clearInjury = async (pid: number | "all") => {
+const clearInjuries = async (pid: number[] | "all") => {
 	if (pid === "all") {
 		const players = await idb.cache.players.getAll();
 		for (const p of players) {
@@ -400,13 +401,15 @@ const clearInjury = async (pid: number | "all") => {
 			}
 		}
 	} else {
-		const p = await idb.cache.players.get(pid);
-		if (p) {
-			p.injury = {
-				type: "Healthy",
-				gamesRemaining: 0,
-			};
-			await idb.cache.players.put(p);
+		for (const pids of pid) {
+			const p = await idb.cache.players.get(pids);
+			if (p) {
+				p.injury = {
+					type: "Healthy",
+					gamesRemaining: 0,
+				};
+				await idb.cache.players.put(p);
+			}
 		}
 	}
 
@@ -586,6 +589,10 @@ const createLeague = async (
 	});
 
 	delete (self as any).stream0;
+
+	if (settings.giveMeWorstRoster) {
+		await league.swapWorstRoster(false);
+	}
 
 	toUI(
 		"updateLocal",
@@ -1558,6 +1565,19 @@ const getLeagues = () => {
 	return idb.meta.getAll("leagues");
 };
 
+const getPlayerGraphStat = (prev: { statType?: string; stat?: string }) => {
+	const statType = prev.statType ?? random.choice(statTypes);
+	const stats = getStats(statType);
+	const stat =
+		prev.stat !== undefined && stats.includes(prev.stat)
+			? prev.stat
+			: random.choice(stats);
+	return {
+		statType,
+		stat,
+	};
+};
+
 const getPlayersCommandPalette = async () => {
 	const playersAll = await idb.cache.players.indexGetAll("playersByTid", [
 		PLAYER.FREE_AGENT,
@@ -1582,28 +1602,28 @@ const getPlayerBioInfoDefaults = initDefaults;
 
 const getPlayerWatch = async (pid: number) => {
 	if (Number.isNaN(pid)) {
-		return false;
+		return 0;
 	}
 
 	let p;
 	if (local.exhibitionGamePlayers) {
 		p = local.exhibitionGamePlayers[pid];
 		if (!p) {
-			return false;
+			return 0;
 		}
 	} else {
 		p = await idb.cache.players.get(pid);
 	}
 
 	if (p) {
-		return !!p.watch;
+		return p.watch ?? 0;
 	}
 	const p2 = await idb.getCopy.players({ pid }, "noCopyCache");
 	if (p2) {
-		return !!p2.watch;
+		return p2.watch ?? 0;
 	}
 
-	return false;
+	return 0;
 };
 
 const getRandomCollege = async () => {
@@ -2051,6 +2071,9 @@ const importPlayers = async ({
 				},
 			],
 			weight: p.weight,
+
+			// Particularly important because stats are ignored, so jersey number is lost without this
+			jerseyNumber: p.stats?.at(-1)?.jerseyNumber ?? p.jerseyNumber,
 		};
 
 		// Only add injury if the season wasn't chaned by the user. These variables copied from ImportPlayers init
@@ -2878,7 +2901,13 @@ const setForceWinAll = async ({
 	await toUI("realtimeUpdate", [["gameSim"]]);
 };
 
-const setGOATFormula = async (formula: string) => {
+const setGOATFormula = async ({
+	formula,
+	type,
+}: {
+	formula: string;
+	type: "season" | "career";
+}) => {
 	// Arbitrary player for testing
 	const players = await idb.cache.players.getAll();
 	const p = players[0];
@@ -2887,13 +2916,30 @@ const setGOATFormula = async (formula: string) => {
 	}
 
 	// Confirm it actually works
-	goatFormula.evaluate(p, formula);
+	goatFormula.evaluate(
+		p,
+		formula,
+		type === "season"
+			? {
+					type,
+					season: g.get("season"),
+			  }
+			: {
+					type,
+			  },
+	);
 
-	await league.setGameAttributes({
-		goatFormula: formula,
-	});
-
-	await toUI("realtimeUpdate", [["g.goatFormula"]]);
+	if (type === "career") {
+		await league.setGameAttributes({
+			goatFormula: formula,
+		});
+		await toUI("realtimeUpdate", [["g.goatFormula"]]);
+	} else {
+		await league.setGameAttributes({
+			goatSeasonFormula: formula,
+		});
+		await toUI("realtimeUpdate", [["g.goatSeasonFormula"]]);
+	}
 };
 
 const setLocal = async <T extends keyof Local>([key, value]: [T, Local[T]]) => {
@@ -3511,13 +3557,13 @@ const updatePlayerWatch = async ({
 	watch,
 }: {
 	pid: number;
-	watch: boolean;
+	watch: number;
 }) => {
 	let p;
 	if (local.exhibitionGamePlayers) {
 		p = local.exhibitionGamePlayers[pid];
 		if (!p) {
-			return false;
+			return;
 		}
 	} else {
 		p = await idb.cache.players.get(pid);
@@ -3526,10 +3572,10 @@ const updatePlayerWatch = async ({
 		p = await idb.league.get("players", pid);
 	}
 	if (p) {
-		if (watch) {
-			p.watch = 1;
-		} else {
+		if (watch < 1 || watch > g.get("numWatchColors")) {
 			delete p.watch;
+		} else {
+			p.watch = watch;
 		}
 		if (!local.exhibitionGamePlayers) {
 			await idb.cache.players.put(p);
@@ -3792,12 +3838,12 @@ const upsertCustomizedPlayer = async (
 		p,
 		originalTid,
 		season,
-		updatedRatingsOrAge,
+		recomputePosOvrPot,
 	}: {
 		p: Player | PlayerWithoutKey;
 		originalTid: number | undefined;
 		season: number;
-		updatedRatingsOrAge: boolean;
+		recomputePosOvrPot: boolean;
 	},
 	conditions: Conditions,
 ): Promise<number> => {
@@ -3859,28 +3905,15 @@ const upsertCustomizedPlayer = async (
 		});
 	}
 
-	// Recalculate player ovr, pot, and values if necessary
-	const selectedPos = p.ratings[r].pos;
-
-	if (updatedRatingsOrAge || !Object.hasOwn(p, "pid")) {
-		await player.develop(p, 0);
-		await player.updateValues(p);
+	// Recalculate player pos, ovr, pot, and values if necessary
+	const originalPot = p.ratings.at(-1).pot;
+	await player.develop(p, 0);
+	if (!recomputePosOvrPot) {
+		// Make sure not to randomly change pot if it was not necessary (no ratings/age change, and in non-basketball sports no pos change).
+		// Why do this here, rather than just calling develop only if this stuff changed? Because develop handles PlayerRatings.pos being set to the right value too, and that can change in BBGM even if no ratings change.
+		p.ratings.at(-1).pot = originalPot;
 	}
-
-	// In case that develop call reset position, re-apply it here
-	p.ratings[r].pos = selectedPos;
-
-	if (isSport("football")) {
-		if (
-			p.ratings[r].ovrs &&
-			Object.hasOwn(p.ratings[r].ovrs, selectedPos) &&
-			p.ratings[r].pots &&
-			Object.hasOwn(p.ratings[r].pots, selectedPos)
-		) {
-			p.ratings[r].ovr = p.ratings[r].ovrs[selectedPos];
-			p.ratings[r].pot = p.ratings[r].pots[selectedPos];
-		}
-	}
+	await player.updateValues(p);
 
 	// Add regular season or playoffs stat row, if necessary
 	if (p.tid >= 0 && p.tid !== originalTid && g.get("phase") <= PHASE.PLAYOFFS) {
@@ -4209,7 +4242,7 @@ export default {
 		checkAccount: checkAccount2,
 		checkParticipationAchievement,
 		clearTrade,
-		clearInjury,
+		clearInjuries,
 		clearWatchList,
 		countNegotiations,
 		createLeague,
@@ -4238,6 +4271,7 @@ export default {
 		getLeagueInfo,
 		getLeagueName,
 		getLeagues,
+		getPlayerGraphStat,
 		getPlayersCommandPalette,
 		getLocal,
 		getPlayerBioInfoDefaults,

@@ -30,13 +30,17 @@ const Most = ({
 }: View<"most">) => {
 	useTitleBar({ title, customMenu: frivolitiesMenu });
 
+	const hasBestSeasonOverride = players.some(
+		p => p.most?.extra?.bestSeasonOverride !== undefined,
+	);
+
 	const superCols = [
 		{
 			title: "",
 			colspan: 7 + extraCols.length,
 		},
 		{
-			title: "Best Season",
+			title: hasBestSeasonOverride ? "Season Stats" : "Best Season",
 			colspan: 2 + stats.length,
 		},
 		{
@@ -60,14 +64,14 @@ const Most = ({
 		...stats.map(stat => `stat:${stat}`),
 	]);
 
-	const rows = players.map(p => {
+	const rows = players.map((p, i) => {
 		const showRatings = !challengeNoRatings || p.retiredYear !== Infinity;
 
 		const draftPick =
 			p.draft.round > 0 ? `${p.draft.round}-${p.draft.pick}` : "";
 
 		return {
-			key: p.pid,
+			key: i,
 			data: [
 				p.rank,
 				wrappedPlayerNameLabels({
@@ -144,11 +148,13 @@ const Most = ({
 				</p>
 			) : null}
 
-			{type === "goat" ? (
+			{type === "goat" || type === "goat_season" ? (
 				<GOATFormula
+					key={type}
 					awards={extraProps.awards}
-					formula={extraProps.goatFormula}
+					formula={extraProps.formula}
 					stats={extraProps.stats}
+					type={type === "goat_season" ? "season" : "career"}
 				/>
 			) : null}
 

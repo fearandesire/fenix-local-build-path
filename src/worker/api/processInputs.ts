@@ -659,6 +659,37 @@ const playerStats = (params: Params) => {
 	};
 };
 
+const playerGraphs = (params: Params) => {
+	const playoffsX: "playoffs" | "regularSeason" =
+		params.playoffsX === "playoffs" ? "playoffs" : "regularSeason";
+	const playoffsY: "playoffs" | "regularSeason" =
+		params.playoffsY === "playoffs" ? "playoffs" : "regularSeason";
+
+	const seasonX: number | "career" =
+		params.seasonX === "career" ? "career" : validateSeason(params.seasonX);
+	const seasonY: number | "career" =
+		params.seasonY === "career" ? "career" : validateSeason(params.seasonY);
+
+	// String because we're storing the state of the form input field here
+	const minGames =
+		params.minGames?.replace(/g$/, "") ??
+		String(Math.round(g.get("numGames") * 0.2));
+
+	return {
+		seasonX,
+		seasonY,
+		playoffsX,
+		playoffsY,
+		minGames,
+
+		// Defaults to random stat if undefined
+		statTypeX: params.statTypeX,
+		statTypeY: params.statTypeY,
+		statX: params.statX,
+		statY: params.statY,
+	};
+};
+
 const playerStatDists = (params: Params) => {
 	const defaultStatType = bySport({
 		baseball: "batting",
@@ -957,6 +988,7 @@ export default {
 	playerRatingDists: validateSeasonOnly,
 	playerRatings,
 	playerStatDists,
+	playerGraphs,
 	playerStats,
 	playoffs: validateSeasonOnly,
 	powerRankings,

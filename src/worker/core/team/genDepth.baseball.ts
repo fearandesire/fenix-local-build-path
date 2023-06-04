@@ -52,10 +52,13 @@ const findMaxBy = <T extends unknown>(
 		score: number;
 	}[] = [];
 
-	const addToOutput = (x: typeof output[number]) => {
+	const addToOutput = (x: (typeof output)[number]) => {
 		for (let i = 0; i < count - 1; i++) {
-			if (output[i] === undefined || output[i].score < x.score) {
+			if (output[i] === undefined) {
 				output[i] = x;
+				return;
+			} else if (output[i].score < x.score) {
+				output.splice(i, 0, x);
 				return;
 			}
 		}
@@ -94,14 +97,17 @@ export const getDepthDefense = (
 
 	const defPositions = dh ? DEF_POSITIONS_DH : DEF_POSITIONS;
 
-	for (const scorePos of defPositions) {
-		const maxIndex = findMaxBy(playersRemaining, 1, p => score(p, scorePos))[0]
-			.index;
+	if (playersRemaining.length > 0) {
+		for (const scorePos of defPositions) {
+			const maxIndex = findMaxBy(playersRemaining, 1, p =>
+				score(p, scorePos),
+			)[0].index;
 
-		defensivePlayersSorted.push(playersRemaining[maxIndex]);
-		playersRemaining.splice(maxIndex, 1);
-		if (playersRemaining.length === 0) {
-			break;
+			defensivePlayersSorted.push(playersRemaining[maxIndex]);
+			playersRemaining.splice(maxIndex, 1);
+			if (playersRemaining.length === 0) {
+				break;
+			}
 		}
 	}
 

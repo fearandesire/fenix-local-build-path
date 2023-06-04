@@ -20,6 +20,7 @@ import type { View } from "../../common/types";
 import { bySport, getPeriodName, isSport } from "../../common";
 import useLocalStorageState from "use-local-storage-state";
 import type { SportState } from "../util/processLiveGameEvents.baseball";
+import { HeadlineScore } from "../components/BoxScoreWrapper";
 
 type PlayerRowProps = {
 	exhibition?: boolean;
@@ -78,8 +79,16 @@ const updatePhaseAndLeagueTopBar = () => {
 	toWorker("main", "uiUpdateLocal", { liveGameInProgress: false });
 };
 
-const getSeconds = (time: string) => {
-	const [min, sec] = time.split(":").map(x => parseInt(x));
+const getSeconds = (time: string | undefined) => {
+	if (!time) {
+		return 0;
+	}
+
+	const parts = time.split(":").map(x => parseInt(x));
+	if (parts.length < 2) {
+		return 0;
+	}
+	const [min, sec] = parts;
 	return min * 60 + sec;
 };
 
@@ -120,7 +129,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 
 	const overtimes = useRef(0);
 	const playByPlayDiv = useRef<HTMLDivElement | null>(null);
-	const quarters = useRef(isSport("hockey") ? [1] : ["Q1"]);
+	const quarters = useRef([]);
 	const possessionChange = useRef<boolean | undefined>();
 	const componentIsMounted = useRef(false);
 	const events = useRef<any[] | undefined>();
@@ -716,6 +725,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 		processToNextPause,
 	]);
 
+	const scrollTop = useRef<HTMLDivElement>(null);
+
 	// Needs to return actual div, not fragment, for AutoAffix!!!
 	return (
 		<div>
@@ -727,7 +738,93 @@ export const LiveGame = (props: View<"liveGame">) => {
 					: "If you navigate away from this page, you won't be able to see these play-by-play results again because they are not stored anywhere. The results of this game are already final, though."}
 			</p>
 
-			<div className="row">
+			{boxScore.current.gid >= 0 ? (
+				<div className="live-game-affix-mobile mb-3 d-md-none">
+					<div className="bg-white pt-2">
+						<HeadlineScore boxScore={boxScore.current} small />
+						<div className="d-flex align-items-center">
+							<PlayPauseNext
+								className="me-2"
+								disabled={boxScore.current.gameOver}
+								fastForwardAlignRight
+								fastForwards={fastForwardMenuItems}
+								onPlay={handlePlay}
+								onPause={handlePause}
+								onNext={handleNextPlay}
+								paused={paused}
+								titlePlay="Resume Simulation"
+								titlePause="Pause Simulation"
+								titleNext="Show Next Play"
+								// Since we have two PlayPauseNexts rendered, ignore shortcuts on one
+								ignoreKeyboardShortcuts
+							/>
+							<input
+								type="range"
+								className="form-range flex-grow-1"
+								disabled={boxScore.current.gameOver}
+								min="1"
+								max="33"
+								step="1"
+								value={speed}
+								onChange={handleSpeedChange}
+								title="Speed"
+							/>
+						</div>
+					</div>
+					<div className="d-flex">
+						<div className="ms-auto btn-group">
+							<button
+								className="btn btn-light-bordered"
+								onClick={() => {
+									scrollTop.current?.scrollIntoView();
+								}}
+							>
+								Top
+							</button>
+							{!isSport("football") ? (
+								<>
+									<button
+										className="btn btn-light-bordered"
+										onClick={() => {
+											document
+												.getElementById("scroll-team-1")
+												?.scrollIntoView();
+										}}
+									>
+										{boxScore.current.teams[0].abbrev}
+									</button>
+									<button
+										className="btn btn-light-bordered"
+										onClick={() => {
+											document
+												.getElementById("scroll-team-2")
+												?.scrollIntoView();
+										}}
+									>
+										{boxScore.current.teams[1].abbrev}
+									</button>
+								</>
+							) : null}
+							<button
+								className="btn btn-light-bordered"
+								onClick={() => {
+									playByPlayDiv.current?.scrollIntoView();
+								}}
+							>
+								Plays
+							</button>
+						</div>
+					</div>
+				</div>
+			) : null}
+
+			<div
+				className="row"
+				ref={scrollTop}
+				style={{
+					scrollMarginTop: 174,
+				}}
+			>
 				<div className="col-md-9">
 					{boxScore.current.gid >= 0 ? (
 						<BoxScoreWrapper
@@ -742,41 +839,39 @@ export const LiveGame = (props: View<"liveGame">) => {
 				</div>
 				<div className="col-md-3">
 					<div className="live-game-affix">
-						{boxScore.current.gid >= 0 ? (
-							<div className="d-flex align-items-center mb-3">
-								<PlayPauseNext
-									className="me-2"
-									disabled={boxScore.current.gameOver}
-									fastForwardAlignRight
-									fastForwards={fastForwardMenuItems}
-									onPlay={handlePlay}
-									onPause={handlePause}
-									onNext={handleNextPlay}
-									paused={paused}
-									titlePlay="Resume Simulation"
-									titlePause="Pause Simulation"
-									titleNext="Show Next Play"
-								/>
-								<div className="mb-3 flex-grow-1 mb-0">
-									<input
-										type="range"
-										className="form-range"
-										disabled={boxScore.current.gameOver}
-										min="1"
-										max="33"
-										step="1"
-										value={speed}
-										onChange={handleSpeedChange}
-										title="Speed"
-									/>
-								</div>
-							</div>
-						) : null}
-
+						<div className="d-none d-md-flex align-items-center mb-3">
+							<PlayPauseNext
+								className="me-2"
+								disabled={boxScore.current.gameOver}
+								fastForwardAlignRight
+								fastForwards={fastForwardMenuItems}
+								onPlay={handlePlay}
+								onPause={handlePause}
+								onNext={handleNextPlay}
+								paused={paused}
+								titlePlay="Resume Simulation"
+								titlePause="Pause Simulation"
+								titleNext="Show Next Play"
+							/>
+							<input
+								type="range"
+								className="form-range flex-grow-1"
+								disabled={boxScore.current.gameOver}
+								min="1"
+								max="33"
+								step="1"
+								value={speed}
+								onChange={handleSpeedChange}
+								title="Speed"
+							/>
+						</div>
 						<div
 							className="live-game-playbyplay"
 							ref={c => {
 								playByPlayDiv.current = c;
+							}}
+							style={{
+								scrollMarginTop: 174,
 							}}
 						/>
 					</div>

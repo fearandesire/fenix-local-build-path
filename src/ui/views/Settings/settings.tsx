@@ -66,7 +66,6 @@ export const settings: Setting[] = (
 			category: "New League",
 			key: "realStats",
 			name: "Historical Stats",
-			godModeRequired: "existingLeagueOnly",
 			showOnlyIf: ({ newLeague, hasPlayers, realPlayers }) =>
 				newLeague && hasPlayers && realPlayers,
 			type: "string",
@@ -85,7 +84,6 @@ export const settings: Setting[] = (
 			category: "New League",
 			key: "randomization",
 			name: "Randomization",
-			godModeRequired: "existingLeagueOnly",
 			showOnlyIf: ({ newLeague, hasPlayers, realPlayers }) =>
 				newLeague && hasPlayers && realPlayers,
 			type: "string",
@@ -128,7 +126,6 @@ export const settings: Setting[] = (
 			category: "New League",
 			key: "randomization",
 			name: "Randomization",
-			godModeRequired: "existingLeagueOnly",
 			showOnlyIf: ({
 				defaultNewLeagueSettings,
 				newLeague,
@@ -156,7 +153,6 @@ export const settings: Setting[] = (
 						category: "New League",
 						key: "randomization",
 						name: "Randomization",
-						godModeRequired: "existingLeagueOnly",
 						showOnlyIf: ({
 							defaultNewLeagueSettings,
 							newLeague,
@@ -193,7 +189,6 @@ export const settings: Setting[] = (
 			category: "New League",
 			key: "realDraftRatings",
 			name: "Real Draft Prospect Ratings",
-			godModeRequired: "existingLeagueOnly",
 			showOnlyIf: ({ newLeague, hasPlayers, realPlayers }) =>
 				newLeague &&
 				((hasPlayers && realPlayers) ||
@@ -229,7 +224,6 @@ export const settings: Setting[] = (
 			category: "New League",
 			key: "equalizeRegions",
 			name: "Equalize Region Populations",
-			godModeRequired: "existingLeagueOnly",
 			showOnlyIf: ({ newLeague }) => newLeague,
 			type: "bool",
 		},
@@ -237,9 +231,18 @@ export const settings: Setting[] = (
 			category: "New League",
 			key: "noStartingInjuries",
 			name: "No Starting Injuries",
-			godModeRequired: "existingLeagueOnly",
+			godModeRequired: "always",
 			showOnlyIf: ({ newLeague, hasPlayers }) => newLeague && hasPlayers,
 			type: "bool",
+		},
+		{
+			category: "New League",
+			key: "giveMeWorstRoster",
+			name: "Give Me The Worst Roster",
+			showOnlyIf: ({ newLeague }) => newLeague,
+			type: "bool",
+			description:
+				"This swaps your roster with the roster of the worst team in the league, based on team ovr rating.",
 		},
 		{
 			category: "Schedule",
@@ -295,7 +298,7 @@ export const settings: Setting[] = (
 			type: "int",
 			validator: (value, output) => {
 				if (!isSport("football") && value < output.numPlayersOnCourt) {
-					throw new Error("Value cannot be less than # Players On Court");
+					throw new Error(`Value cannot be less than # Players On ${COURT}`);
 				}
 				if (isSport("hockey") && value < 12) {
 					// Game sim crashes with fewer than 12 players currently. Otherwise, should be no limit.
@@ -983,6 +986,15 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "Events",
+			key: "minRetireAge",
+			name: "Minimum Retirement Age",
+			godModeRequired: "always",
+			type: "int",
+			description:
+				"This affects players who remain unsigned for more than 1 season, and also (if you set it high enough) players on teams who are old and declining in production.",
+		},
+		{
+			category: "Events",
 			key: "forceRetireAge",
 			name: "Force Retire at Age",
 			godModeRequired: "always",
@@ -1159,11 +1171,28 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "Challenge Modes",
-			key: "challengeThanosMode",
-			name: "Thanos Mode",
+			key: "challengeSisyphusMode",
+			name: "Sisyphus Mode",
 			type: "bool",
 			description:
-				"At the end of the playoffs, there's a 20% chance of half the league either dying (if random player) or retiring (if real player). After each event, it can't happen again until three years later.",
+				"After you reach the top of the mountain (win a championship), your roster is swapped with the worst team in the league.",
+		},
+		{
+			category: "Challenge Modes",
+			key: "challengeThanosMode",
+			name: "Thanos Mode",
+			type: "float",
+			decoration: "percent",
+			description:
+				"At the end of the playoffs, there's some percentage chance of half the league either dying (if random player) or retiring (if real player). After each event, it can't happen again until three years later.",
+			validator: value => {
+				if (value > 100) {
+					throw new Error("Value cannot be greater than 100%");
+				}
+				if (value < 0) {
+					throw new Error("Value cannot be less than 0%");
+				}
+			},
 		},
 		{
 			category: "Game Modes",
@@ -1204,6 +1233,26 @@ export const settings: Setting[] = (
 					throw new Error("Value cannot be less than 0");
 				}
 			},
+		},
+		{
+			category: "Schedule",
+			key: "groupScheduleSeries",
+			name: "Group Games Into Series",
+			type: "bool",
+			descriptionLong: (
+				<>
+					<p>
+						When enabled, matchups between the same teams will be grouped into 3
+						or 4 game series, similar to a MLB schedule. It's really only
+						noticeable when the same teams play multiple games against each
+						other on the same home {COURT}, such as in a 162 game baseball
+						season with 30 teams.
+					</p>
+					<p>
+						This does not change the games scheduled, it only reorders them.
+					</p>
+				</>
+			),
 		},
 		{
 			category: "Playoffs",
@@ -2043,6 +2092,19 @@ export const settings: Setting[] = (
 				"This will hide inactive teams from dropdown menus at the top of many pages, such as the roster page.",
 		},
 		{
+			category: "UI",
+			key: "numWatchColors",
+			name: "# Watch List Colors",
+			type: "int",
+			description:
+				"If you have more than one color, you can cycle through them by clicking a player's watch flag.",
+			validator: value => {
+				if (value < 1 || value > 8) {
+					throw new Error("Value must be between 1 and 8");
+				}
+			},
+		},
+		{
 			category: "Players",
 			key: "goatFormula",
 			name: "GOAT Formula",
@@ -2051,9 +2113,17 @@ export const settings: Setting[] = (
 			maxWidth: true,
 		},
 		{
+			category: "Players",
+			key: "goatSeasonFormula",
+			name: "GOAT Season Formula",
+			type: "string",
+			description: "See Tools > Frivolities > GOAT Season for details.",
+			maxWidth: true,
+		},
+		{
 			category: "Game Simulation",
 			key: "numPlayersOnCourt",
-			name: "# Players On Court",
+			name: `# Players On ${COURT}`,
 			godModeRequired: "always",
 			type: "int",
 			description: "By default BBGM is 5-on-5, but you can change that here",
@@ -2068,6 +2138,12 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "All-Star",
+			key: "allStarDunk",
+			name: "Enable Dunk Contest",
+			type: "bool",
+		},
+		{
+			category: "All-Star",
 			key: "numPlayersDunk",
 			name: "# Players In Dunk Contest",
 			type: "int",
@@ -2076,6 +2152,12 @@ export const settings: Setting[] = (
 					throw new Error("Value must be greater than 2");
 				}
 			},
+		},
+		{
+			category: "All-Star",
+			key: "allStarThree",
+			name: "Enable 3pt Contest",
+			type: "bool",
 		},
 		{
 			category: "All-Star",

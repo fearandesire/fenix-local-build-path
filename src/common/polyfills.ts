@@ -92,4 +92,74 @@ if (!Blob.prototype.stream) {
 	};
 }
 
+// Chrome 92, Firefox 90, Safari 15.4
+// https://github.com/tc39/proposal-relative-indexing-method#polyfill
+function at(this: any, n: number) {
+	// ToInteger() abstract op
+	n = Math.trunc(n) || 0;
+	// Allow negative indexing from the end
+	if (n < 0) n += this.length;
+	// OOB access is guaranteed to return undefined
+	if (n < 0 || n >= this.length) return undefined;
+	// Otherwise, this is just normal property access
+	return this[n];
+}
+if (!Array.prototype.at) {
+	for (const C of [Array, String]) {
+		Object.defineProperty(C.prototype, "at", {
+			value: at,
+			writable: true,
+			enumerable: false,
+			configurable: true,
+		});
+	}
+}
+
+// Chrome 97, Firefox 104, Safari 15.4
+if (!Array.prototype.findLast) {
+	Object.defineProperty(Array.prototype, "findLast", {
+		value: function (cb: any) {
+			for (let i = this.length - 1; i >= 0; i--) {
+				if (cb(this[i])) {
+					return this[i];
+				}
+			}
+		},
+		configurable: true,
+		enumerable: false,
+		writable: true,
+	});
+}
+
+// Chrome 93, Firefox 92, Safari 15.4
+if (!Object.hasOwn) {
+	Object.defineProperty(Object, "hasOwn", {
+		value: function (object: object, property: PropertyKey) {
+			if (object == null) {
+				throw new TypeError("Cannot convert undefined or null to object");
+			}
+			return Object.prototype.hasOwnProperty.call(Object(object), property);
+		},
+		configurable: true,
+		enumerable: false,
+		writable: true,
+	});
+}
+
+// Chrome 71, Firefox 105, Safari 14.1
+import "./polyfill-TextEncoderDecoderStream";
+
+// Chrome 71
+// https://github.com/feross/queue-microtask/blob/2a5e7b9874c5f075e62975862e5e4a673f149786/index.js
+/*! queue-microtask. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */
+if (typeof queueMicrotask !== "function") {
+	let promise: Promise<unknown>;
+	self.queueMicrotask = cb =>
+		(promise || (promise = Promise.resolve())).then(cb).catch(err =>
+			setTimeout(() => {
+				throw err;
+			}, 0),
+		);
+}
+
 import "./polyfills-modern";

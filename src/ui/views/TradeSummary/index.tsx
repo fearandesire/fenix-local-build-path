@@ -15,7 +15,6 @@ const TradeSummary = ({
 	teams,
 	usePts,
 }: View<"tradeSummary">) => {
-	console.log("seasonsToPlot", seasonsToPlot);
 	useTitleBar({
 		title: "Trade Summary",
 	});
@@ -74,6 +73,8 @@ const TradeSummary = ({
 												{asset.age} years old
 												<br />
 												{helpers.roundStat(asset.stat, "ws")} {stat} after trade
+												({helpers.roundStat(asset.statTeam, "ws")} with{" "}
+												{t.abbrev})
 											</div>
 										</div>
 									);
@@ -114,7 +115,7 @@ const TradeSummary = ({
 												/>
 											</div>
 											<div>
-												<span className="text-muted">
+												<span className="text-body-secondary">
 													via <PickText asset={asset} season={season} />
 												</span>
 												<br />
@@ -124,6 +125,8 @@ const TradeSummary = ({
 												{asset.age} years old
 												<br />
 												{helpers.roundStat(asset.stat, "ws")} {stat} after trade
+												({helpers.roundStat(asset.statTeam, "ws")} with{" "}
+												{t.abbrev})
 											</div>
 										</div>
 									);
@@ -132,7 +135,10 @@ const TradeSummary = ({
 								return "???";
 							})}
 							<b>
-								Total {stat} after trade: {helpers.roundStat(t.statSum, "ws")}
+								{helpers.roundStat(t.statSum, "ws")} {stat} after trade (total)
+								<br />
+								{helpers.roundStat(t.statSumTeam, "ws")} {stat} after trade
+								(with {t.abbrev})
 							</b>
 						</div>
 					))}

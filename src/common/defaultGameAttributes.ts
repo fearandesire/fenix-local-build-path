@@ -88,6 +88,8 @@ const gameAttributesKeysSportSpecific = {
 		"ties",
 		"numPlayersOnCourt",
 		"pace",
+		"allStarDunk",
+		"allStarThree",
 	] as GameAttributeKey[],
 	football: [
 		"fantasyPoints",
@@ -176,6 +178,8 @@ const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	sonRate: 0.02,
 	brotherRate: 0.02,
 	forceRetireAge: 0,
+	minRetireAge: 26,
+	groupScheduleSeries: false,
 
 	salaryCapType: "soft",
 
@@ -195,6 +199,8 @@ const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	allStarGame: 0.7,
 	allStarNum: 12,
 	allStarType: "draft",
+	allStarDunk: true,
+	allStarThree: true,
 	budget: true,
 	numSeasonsFutureDraftPicks: 4,
 	foulRateFactor: 1,
@@ -221,7 +227,8 @@ const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	challengeLoseBestPlayer: false,
 	challengeFiredLuxuryTax: false,
 	challengeFiredMissPlayoffs: false,
-	challengeThanosMode: false,
+	challengeSisyphusMode: false,
+	challengeThanosMode: 0,
 	thanosCooldownEnd: undefined,
 	repeatSeason: undefined,
 	equalizeRegions: false,
@@ -250,6 +257,7 @@ const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	realDraftRatings: undefined,
 	hideDisabledTeams: false,
 	goatFormula: undefined,
+	goatSeasonFormula: undefined,
 	inflationAvg: 0,
 	inflationMax: 0,
 	inflationMin: 0,
@@ -269,6 +277,7 @@ const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	gender: "male",
 	heightFactor: 1,
 	weightFactor: 1,
+	numWatchColors: 1,
 
 	// These will always be overwritten when creating a league, just here for TypeScript
 	lid: 0,
@@ -446,6 +455,7 @@ export const baseballOverrides: Partial<GameAttributesLeagueWithHistory> =
 				draftPickAutoContractPercent: 20,
 				draftPickAutoContractRounds: 4,
 				draftPickAutoContract: false,
+				groupScheduleSeries: true,
 		  }
 		: {};
 

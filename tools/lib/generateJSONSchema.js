@@ -599,7 +599,7 @@ const generateJSONSchema = (sport /*: string*/) => {
 				},
 			},
 			gameAttributes: {
-				oneOf: [
+				anyOf: [
 					{
 						type: "array",
 					},
@@ -611,6 +611,9 @@ const generateJSONSchema = (sport /*: string*/) => {
 							},
 							aiTradesFactor: {
 								type: "number",
+							},
+							allStarDunk: {
+								type: "boolean",
 							},
 							allStarGame: {
 								// boolean is legacy
@@ -628,6 +631,9 @@ const generateJSONSchema = (sport /*: string*/) => {
 							},
 							allStarNum: {
 								type: "number",
+							},
+							allStarThree: {
+								type: "boolean",
 							},
 							allStarType: {
 								type: "string",
@@ -664,8 +670,18 @@ const generateJSONSchema = (sport /*: string*/) => {
 							challengeFiredMissPlayoffs: {
 								type: "boolean",
 							},
-							challengeThanosMode: {
+							challengeSisyphusMode: {
 								type: "boolean",
+							},
+							challengeThanosMode: {
+								anyOf: [
+									{
+										type: "boolean",
+									},
+									{
+										type: "number",
+									},
+								],
 							},
 							confs: wrap({
 								type: "array",
@@ -684,7 +700,7 @@ const generateJSONSchema = (sport /*: string*/) => {
 							},
 
 							dh: {
-								oneOf: [
+								anyOf: [
 									{
 										type: "string",
 										enum: ["all", "none"],
@@ -812,8 +828,14 @@ const generateJSONSchema = (sport /*: string*/) => {
 							goatFormula: {
 								type: "string",
 							},
+							goatSeasonFormula: {
+								type: "string",
+							},
 							gracePeriodEnd: {
 								type: "integer",
+							},
+							groupScheduleSeries: {
+								type: "boolean",
 							},
 							heightFactor: {
 								type: "number",
@@ -899,6 +921,9 @@ const generateJSONSchema = (sport /*: string*/) => {
 								type: "integer",
 								minimum: 0,
 							},
+							minRetireAge: {
+								type: "integer",
+							},
 							minRosterSize: {
 								type: "integer",
 								minimum: 0,
@@ -910,6 +935,9 @@ const generateJSONSchema = (sport /*: string*/) => {
 									last: {},
 								},
 								required: ["first", "last"],
+							},
+							numWatchColors: {
+								type: "integer",
 							},
 							otherTeamsWantToHire: {
 								type: "boolean",
@@ -992,7 +1020,6 @@ const generateJSONSchema = (sport /*: string*/) => {
 							},
 							numGamesPlayoffSeries: wrap({
 								type: "array",
-								minItems: 1,
 								items: {
 									type: "integer",
 									minimum: 1,
@@ -1563,7 +1590,7 @@ const generateJSONSchema = (sport /*: string*/) => {
 							type: "number",
 						},
 						hof: {
-							oneOf: [
+							anyOf: [
 								{
 									type: "boolean",
 								},
@@ -1761,12 +1788,12 @@ const generateJSONSchema = (sport /*: string*/) => {
 							type: "number",
 						},
 						watch: {
-							oneOf: [
+							anyOf: [
 								{
 									type: "boolean",
 								},
 								{
-									const: 1,
+									type: "number",
 								},
 							],
 						},

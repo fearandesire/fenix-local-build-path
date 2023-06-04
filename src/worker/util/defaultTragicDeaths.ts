@@ -22,7 +22,7 @@ const reasons = [
 	"PLAYER_NAME rode PRONOUN_his Segway off a cliff.",
 	"PLAYER_NAME fell into the gorilla pit at the zoo and was dismembered as the staff decided not to shoot the gorilla.",
 	"PLAYER_NAME was pursued by a bear, and mauled.", // poor Antigonus
-	"PLAYER_NAME was smothered by a throng of ravenous, autograph-seeking fans after exiting the team plane.",
+	"PLAYER_NAME was smothered to death by a throng of ravenous, autograph-seeking fans after exiting the team plane.",
 	"PLAYER_NAME suffered a heart attack in the team training facility and died.",
 	"PLAYER_NAME was lost at sea and is presumed dead.",
 	"PLAYER_NAME was run over by a car.",
@@ -43,7 +43,13 @@ const reasons = [
 	`PLAYER_NAME was intensely focused on playing ${GAME_NAME} on PRONOUN_his cell phone. As PRONOUN_he walked across the street, PRONOUN_he was so distracted by PRONOUN_his ultimately fatal obsession that PRONOUN_he didn't notice the bus barreling towards PRONOUN_him.`,
 	"PLAYER_NAME drowned while crossing the Saleph River.",
 	"PLAYER_NAME uploaded PRONOUN_himself to the cloud and can no longer participate in corporeal pursuits.",
-	"PLAYER_NAME committed suicide by two shots to the back of PRONOUN_his head after handcuffing and throwing PRONOUN_himself into ocean inside duffle bag, CIA reports.",
+	"PLAYER_NAME committed suicide by two shots to the back of PRONOUN_his head after handcuffing and throwing PRONOUN_himself into ocean inside a duffle bag, CIA reports.",
+
+	// https://old.reddit.com/r/BasketballGM/comments/13231s4/more_random_death_events_suggestions/
+	"PLAYER_NAME fell to PRONOUN_his death while testing PRONOUN_his homemade parachute.",
+	"PLAYER_NAME was killed by a falling coconut while relaxing at the beach.",
+	"PLAYER_NAME died after eating way too many Brazil nuts and overdosing on selenium.",
+	"PLAYER_NAME drowned after falling into a vat of chocolate during a factory tour.",
 ];
 
 if (isSport("basketball")) {

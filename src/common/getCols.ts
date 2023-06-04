@@ -2896,6 +2896,9 @@ const cols: {
 		noSearch: true,
 		sortSequence: [],
 	},
+	"Draft Pick": {
+		sortType: "number",
+	},
 	"Draft Picks": {
 		sortSequence: [],
 	},
@@ -2914,7 +2917,6 @@ const cols: {
 	},
 	Exp: {
 		desc: "Contract Expiration",
-		sortSequence: ["asc", "desc"],
 		sortType: "number",
 	},
 	Experience: {
@@ -3169,6 +3171,10 @@ const cols: {
 		sortType: "number",
 	},
 	"Runner Up": {},
+	Salary: {
+		sortSequence: ["desc", "asc"],
+		sortType: "currency",
+	},
 	Season: {
 		sortSequence: ["desc", "asc"],
 		sortType: "number",
@@ -3476,7 +3482,7 @@ const cols: {
 	...sportSpecificCols,
 };
 
-export default (
+const getCols = (
 	titles: string[],
 	overrides: Record<string, Partial<Col>> = {},
 ): Col[] => {
@@ -3492,3 +3498,5 @@ export default (
 		};
 	});
 };
+
+export default getCols;

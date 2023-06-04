@@ -143,15 +143,31 @@ export const frivolities = {
 			description: "Largest single season ovr increases.",
 		},
 		{
+			urlParts: ["most", "rookies"],
+			name: "Best Rookies",
+			description: "The best rookie seasons.",
+		},
+		{
 			urlParts: ["most", "earnings"],
 			name: "Career Earnings",
 			description: "Players who made the most money.",
+		},
+		{
+			urlParts: ["most", "progs_career"],
+			name: "Career Progs",
+			description: "The biggest improvements from draft prospect to peak.",
 		},
 		{
 			urlParts: ["most", "goat"],
 			name: "GOAT Lab",
 			description:
 				"Define your own formula to rank the greatest players of all time.",
+		},
+		{
+			urlParts: ["most", "goat_season"],
+			name: "GOAT Season",
+			description:
+				"Define your own formula to rank the greatest seasons of all time.",
 		},
 		{
 			urlParts: ["most", "hall_of_good"],
