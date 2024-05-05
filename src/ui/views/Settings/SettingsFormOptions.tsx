@@ -15,6 +15,7 @@ import {
 	type State,
 } from "./SettingsForm";
 import type { Decoration, FieldType, Key, Values } from "./types";
+import { helpers } from "../../util";
 
 export const godModeRequiredMessage = (
 	godModeRequired?: "always" | "existingLeagueOnly",
@@ -89,7 +90,7 @@ const Input = ({
 		inputElement = (
 			<div className="d-flex" style={inputStyle}>
 				<div className="text-end me-1" style={{ minWidth: 38 }}>
-					{Math.round(parseFloat(value) * 100)}%
+					{Math.round(helpers.localeParseFloat(value) * 100)}%
 				</div>
 				<div>
 					<input
@@ -365,7 +366,7 @@ const SettingsFormOptions = ({
 								</HelpPopover>
 							) : null}
 						</h2>
-						{category.name === "Game Simulation" &&
+						{category.name === "Tendencies" &&
 						isSport("basketball") &&
 						gameSimPresets &&
 						(godMode || showGodModeSettings) ? (
@@ -512,7 +513,7 @@ const SettingsFormOptions = ({
 														onCancelDefaultSetting
 															? () => {
 																	onCancelDefaultSetting(key);
-															  }
+																}
 															: undefined
 													}
 												/>

@@ -1,6 +1,6 @@
-import orderBy from "lodash-es/orderBy";
 import { bySport, isSport } from "../../../common";
 import type { Player, Team } from "../../../common/types";
+import { orderBy } from "../../../common/utils";
 import { idb } from "../../db";
 import { g, local, logEvent, helpers } from "../../util";
 import { getThreshold } from "./madeHof.football";
@@ -207,10 +207,16 @@ const checkJerseyNumberRetirement = async (p: Player) => {
 		);
 	}
 
+	const seasonRetired = g.get("season");
+
+	// Last season player played for team
+	const seasonTeamInfo =
+		p.stats.findLast(row => row.tid === t.tid)?.season ?? seasonRetired;
+
 	t.retiredJerseyNumbers.push({
 		number,
-		seasonRetired: g.get("season"),
-		seasonTeamInfo: g.get("season"),
+		seasonRetired,
+		seasonTeamInfo,
 		pid: p.pid,
 		text: "",
 		score: maxScore,

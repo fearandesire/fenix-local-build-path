@@ -1,5 +1,5 @@
 import { bySport, isSport, PHASE, POSITIONS } from "../../common";
-import { season, team } from "../core";
+import { finances, season, team } from "../core";
 import { idb } from "../db";
 import { g } from "../util";
 import type {
@@ -27,6 +27,7 @@ const updateRoster = async (
 	state: any,
 ) => {
 	if (
+		updateEvents.includes("firstRun") ||
 		updateEvents.includes("watchList") ||
 		updateEvents.includes("gameAttributes") ||
 		updateEvents.includes("playerMovement") ||
@@ -122,6 +123,8 @@ const updateRoster = async (
 
 		let players: any[];
 		let payroll: number | undefined;
+		let luxuryTaxAmount: number | undefined;
+		let minPayrollAmount: number | undefined;
 
 		if (inputs.season === g.get("season")) {
 			const schedule = await season.getSchedule();
@@ -130,7 +133,10 @@ const updateRoster = async (
 			const playersAll = await addMood(
 				await idb.cache.players.indexGetAll("playersByTid", inputs.tid),
 			);
-			payroll = (await team.getPayroll(inputs.tid)) / 1000;
+			payroll = await team.getPayroll(inputs.tid);
+			luxuryTaxAmount = finances.getLuxuryTaxAmount(payroll) / 1000;
+			minPayrollAmount = finances.getMinPayrollAmount(payroll) / 1000;
+			payroll /= 1000;
 
 			// numGamesRemaining doesn't need to be calculated except for userTid, but it is.
 			let numGamesRemaining = 0;
@@ -148,7 +154,8 @@ const updateRoster = async (
 				attrs,
 				ratings,
 				playoffs: inputs.playoffs === "playoffs",
-				regularSeason: inputs.playoffs !== "playoffs",
+				regularSeason: inputs.playoffs === "regularSeason",
+				combined: inputs.playoffs === "combined",
 				stats: stats2,
 				season: inputs.season,
 				tid: inputs.tid,
@@ -165,7 +172,7 @@ const updateRoster = async (
 			}
 
 			for (const p of players) {
-				// Can alway release player, even if below the minimum roster limit, cause why not .Except in the playoffs.
+				// Can alway release player, even if below the minimum roster limit, cause why not. Except in the playoffs.
 				if (
 					inputs.tid === g.get("userTid") &&
 					(g.get("phase") !== PHASE.PLAYOFFS ||
@@ -196,7 +203,8 @@ const updateRoster = async (
 				attrs,
 				ratings,
 				playoffs: inputs.playoffs === "playoffs",
-				regularSeason: inputs.playoffs !== "playoffs",
+				regularSeason: inputs.playoffs === "regularSeason",
+				combined: inputs.playoffs === "combined",
 				stats: stats2,
 				season: inputs.season,
 				tid: inputs.tid,
@@ -213,6 +221,18 @@ const updateRoster = async (
 
 			for (const p of players) {
 				p.canRelease = false;
+			}
+
+			const teamSeason = await idb.getCopy.teamSeasons({
+				season: inputs.season,
+				tid: inputs.tid,
+			});
+
+			// >0 check handles old leagues that might have it undefined, and real players leagues that have a dummy negative value
+			if (teamSeason && teamSeason.payrollEndOfSeason > 0) {
+				payroll = teamSeason.payrollEndOfSeason / 1000;
+				luxuryTaxAmount = teamSeason.expenses.luxuryTax / 1000;
+				minPayrollAmount = teamSeason.expenses.minTax / 1000;
 			}
 		}
 
@@ -241,6 +261,8 @@ const updateRoster = async (
 			);
 		}
 
+		const playoffsByConf = await season.getPlayoffsByConf(inputs.season);
+
 		return {
 			abbrev: inputs.abbrev,
 			budget: g.get("budget"),
@@ -250,13 +272,17 @@ const updateRoster = async (
 			godMode: g.get("godMode"),
 			salaryCapType: g.get("salaryCapType"),
 			maxRosterSize: g.get("maxRosterSize"),
-			numConfs: g.get("confs", "current").length,
 			numPlayersOnCourt: g.get("numPlayersOnCourt"),
 			numPlayoffRounds: g.get("numGamesPlayoffSeries", inputs.season).length,
+			luxuryPayroll: g.get("luxuryPayroll") / 1000,
+			luxuryTaxAmount,
+			minPayroll: g.get("minPayroll") / 1000,
+			minPayrollAmount,
 			payroll,
 			phase: g.get("phase"),
 			playoffs: inputs.playoffs,
 			players: addFirstNameShort(players),
+			playoffsByConf,
 			salaryCap: g.get("salaryCap") / 1000,
 			season: inputs.season,
 			showSpectatorWarning:

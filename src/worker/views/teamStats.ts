@@ -6,8 +6,9 @@ import type {
 	TeamStatAttr,
 	TeamSeasonAttr,
 } from "../../common/types";
-import { TEAM_STATS_TABLES, bySport } from "../../common";
-import { team } from "../core";
+import { TEAM_STATS_TABLES } from "../../common";
+import { season, team } from "../core";
+import { lowerIsBetter } from "../../common/lowerIsBetter";
 
 export const getStats = async ({
 	season,
@@ -255,6 +256,7 @@ const updateTeams = async (
 	state: any,
 ) => {
 	if (
+		updateEvents.includes("firstRun") ||
 		(inputs.season === g.get("season") &&
 			(updateEvents.includes("gameSim") ||
 				updateEvents.includes("playerMovement"))) ||
@@ -278,7 +280,7 @@ const updateTeams = async (
 			usePts,
 		});
 
-		let ties = g.get("ties", inputs.season);
+		let ties = season.hasTies(inputs.season);
 		let otl = g.get("otl", inputs.season);
 		for (const t of teams) {
 			if (t.seasonAttrs.tied > 0) {
@@ -300,168 +302,6 @@ const updateTeams = async (
 			statTypes = statTypes.concat(table.stats);
 		}
 		statTypes = Array.from(new Set(statTypes));
-
-		const lowerIsBetter = bySport({
-			baseball: [
-				"lost",
-				"otl",
-				"cs",
-				"so",
-				"gdp",
-				"era",
-				"rPit",
-				"er",
-				"hPit",
-				"2bPit",
-				"3bPit",
-				"hrPit",
-				"bbPit",
-				"pc",
-				"ibbPit",
-				"hbpPit",
-				"shPit",
-				"sfPit",
-				"bk",
-				"wp",
-				"bf",
-				"fip",
-				"whip",
-				"h9",
-				"hr9",
-				"bb9",
-				"pc9",
-				"oppPa",
-				"oppAb",
-				"oppR",
-				"oppH",
-				"opp2b",
-				"opp3b",
-				"oppHr",
-				"oppRbi",
-				"oppSb",
-				"oppBb",
-				"oppBa",
-				"oppObp",
-				"oppSlg",
-				"oppOps",
-				"oppTb",
-				"oppHbp",
-				"oppSh",
-				"oppSf",
-				"oppIbb",
-				"oppMov",
-				"oppCg",
-				"oppSho",
-				"oppSv",
-				"oppIp",
-				"oppSoPit",
-				"oppBf",
-				"oppSow",
-			],
-			basketball: [
-				"lost",
-				"otl",
-				"tov",
-				"pf",
-				"oppFg",
-				"oppFga",
-				"oppFgp",
-				"oppTp",
-				"oppTpa",
-				"oppTpp",
-				"opp2p",
-				"opp2pa",
-				"opp2pp",
-				"oppFt",
-				"oppFta",
-				"oppFtp",
-				"oppOrb",
-				"oppDrb",
-				"oppTrb",
-				"oppAst",
-				"oppStl",
-				"oppBlk",
-				"oppPts",
-				"oppMov",
-				"pl",
-				"drtg",
-				"tovp",
-				"oppFgAtRim",
-				"oppFgaAtRim",
-				"oppFgpAtRim",
-				"oppFgLowPost",
-				"oppFgaLowPost",
-				"oppFgpLowPost",
-				"oppFgMidRange",
-				"oppFgaMidRange",
-				"oppFgpMidRange",
-				"oppDd",
-				"oppTd",
-				"oppQd",
-				"oppFxf",
-			],
-			football: [
-				"lost",
-				"otl",
-				"tov",
-				"fmbLost",
-				"pssInt",
-				"pen",
-				"penYds",
-				"drivesTurnoverPct",
-				"oppPts",
-				"oppYds",
-				"oppPly",
-				"oppYdsPerPlay",
-				"oppPssCmp",
-				"oppPss",
-				"oppPssYds",
-				"oppPssTD",
-				"oppPssNetYdsPerAtt",
-				"oppRus",
-				"oppRusYds",
-				"oppRusTD",
-				"oppRusYdsPerAtt",
-				"oppDrives",
-				"oppDrivesScoringPct",
-				"oppAvgFieldPosition",
-				"oppTimePerDrive",
-				"oppPlaysPerDrive",
-				"oppYdsPerDrive",
-				"oppPtsPerDrive",
-				"oppMov",
-			],
-			hockey: [
-				"lost",
-				"otl",
-				"pim",
-				"fol",
-				"gv",
-				"gaa",
-				"oppG",
-				"oppA",
-				"oppEvG",
-				"oppPpG",
-				"oppShG",
-				"oppEvA",
-				"oppPpA",
-				"oppShA",
-				"oppS",
-				"oppSPct",
-				"oppTsa",
-				"oppPpo",
-				"oppPpPct",
-				"oppFow",
-				"oppFoPct",
-				"oppBlk",
-				"oppHit",
-				"oppTk",
-				"oppSv",
-				"oppSvPct",
-				"oppSo",
-				"oppMov",
-			],
-		});
 
 		for (const t of teams) {
 			for (const statType of statTypes) {
@@ -486,7 +326,7 @@ const updateTeams = async (
 		for (const statType of helpers.keys(allStats)) {
 			allStats[statType].sort((a, b) => {
 				// Sort lowest first.
-				if (lowerIsBetter.includes(statType)) {
+				if (lowerIsBetter.has(statType)) {
 					if (a < b) {
 						return -1;
 					}

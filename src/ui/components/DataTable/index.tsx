@@ -1,6 +1,5 @@
 import classNames from "classnames";
 import { csvFormatRows } from "d3-dsv";
-import orderBy from "lodash-es/orderBy";
 import {
 	type SyntheticEvent,
 	type MouseEvent,
@@ -29,6 +28,7 @@ import { arrayMoveImmutable } from "array-move";
 import type SettingsCache from "./SettingsCache";
 import updateSortBys from "./updateSortBys";
 import useStickyXX from "./useStickyXX";
+import { orderBy } from "../../../common/utils";
 
 export type SortBy = [number, SortOrder];
 
@@ -151,7 +151,7 @@ const DataTable = ({
 						cols[i] ? cols[i].sortType : undefined,
 						cols[i] ? cols[i].searchType : undefined,
 					),
-			  )
+				)
 			: [];
 		const skipFiltering = state.searchText === "" && !state.enableFilters;
 		const searchText = state.searchText.toLowerCase();
@@ -163,7 +163,8 @@ const DataTable = ({
 						let found = false;
 
 						for (let i = 0; i < row.data.length; i++) {
-							if (cols[i].noSearch) {
+							// cols[i] might be undefined if number of columns in a table changed
+							if (cols[i]?.noSearch) {
 								continue;
 							}
 
@@ -181,7 +182,8 @@ const DataTable = ({
 					// Filter
 					if (state.enableFilters) {
 						for (let i = 0; i < row.data.length; i++) {
-							if (cols[i].noSearch) {
+							// cols[i] might be undefined if number of columns in a table changed
+							if (cols[i]?.noSearch) {
 								continue;
 							}
 
@@ -195,19 +197,21 @@ const DataTable = ({
 					}
 
 					return true;
-			  });
+				});
+
+		const sortKeys = state.sortBys.map(sortBy => (row: DataTableRow) => {
+			let i = sortBy[0];
+
+			if (typeof i !== "number" || i >= row.data.length || i >= cols.length) {
+				i = 0;
+			}
+
+			return getSortVal(row.data[i], cols[i].sortType);
+		});
 
 		const rowsOrdered = orderBy(
 			rowsFiltered,
-			state.sortBys.map(sortBy => row => {
-				let i = sortBy[0];
-
-				if (typeof i !== "number" || i >= row.data.length || i >= cols.length) {
-					i = 0;
-				}
-
-				return getSortVal(row.data[i], cols[i].sortType);
-			}),
+			sortKeys,
 			state.sortBys.map(sortBy => sortBy[1]),
 		);
 
@@ -447,7 +451,7 @@ const DataTable = ({
 					state.settingsCache.set("DataTableColOrder", newOrder);
 					state.settingsCache.clear("DataTableStickyCols");
 				}}
-				onSortEnd={({ oldIndex, newIndex }) => {
+				onChange={({ oldIndex, newIndex }) => {
 					const newOrder = arrayMoveImmutable(
 						state.colOrder,
 						oldIndex,

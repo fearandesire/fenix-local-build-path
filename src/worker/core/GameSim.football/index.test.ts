@@ -1,4 +1,3 @@
-import range from "lodash-es/range";
 import assert from "node:assert/strict";
 import GameSim from ".";
 import { player, team } from "..";
@@ -6,6 +5,8 @@ import loadTeams from "../game/loadTeams";
 import { g, helpers } from "../../util";
 import testHelpers from "../../../test/helpers";
 import Play from "./Play";
+import { DEFAULT_LEVEL } from "../../../common/budgetLevels";
+import { range } from "../../../common/utils";
 
 export const genTwoTeams = async () => {
 	testHelpers.resetG();
@@ -13,8 +14,8 @@ export const genTwoTeams = async () => {
 	const teamsDefault = helpers.getTeamsDefault().slice(0, 2);
 	await testHelpers.resetCache({
 		players: [
-			...range(50).map(() => player.generate(0, 25, 2010, true, 15.5)),
-			...range(50).map(() => player.generate(1, 25, 2010, true, 15.5)),
+			...range(50).map(() => player.generate(0, 25, 2010, true, DEFAULT_LEVEL)),
+			...range(50).map(() => player.generate(1, 25, 2010, true, DEFAULT_LEVEL)),
 		],
 		teams: teamsDefault.map(team.generate),
 		teamSeasons: teamsDefault.map(t => team.genSeasonRow(t)),
@@ -59,6 +60,63 @@ describe("worker/core/GameSim.football", () => {
 		assert.strictEqual(game.getPlayType(), "fieldGoalLate");
 	});
 
+	test("kick a field goal on 4th down to take the lead late in the game", async () => {
+		const game = await initGameSim();
+		game.probMadeFieldGoal = () => 0.75;
+
+		const situationsToAlwaysKick = [
+			{
+				ptsDown: 2,
+				clock: 2,
+			},
+			{
+				ptsDown: 1,
+				clock: 2,
+			},
+			{
+				ptsDown: 0,
+				clock: 2,
+			},
+			{
+				ptsDown: -4,
+				clock: 2,
+			},
+			{
+				ptsDown: -5,
+				clock: 2,
+			},
+			{
+				ptsDown: -6,
+				clock: 2,
+			},
+			{
+				ptsDown: -7,
+				clock: 2,
+			},
+			{
+				ptsDown: -8,
+				clock: 2,
+			},
+		];
+
+		// 4th quarter, 4th down, ball on the opp 20 yard line
+		for (const { ptsDown, clock } of situationsToAlwaysKick) {
+			game.awaitingKickoff = undefined;
+			game.o = 0;
+			game.d = 1;
+			game.team[0].stat.pts = 10;
+			game.team[0].stat.ptsQtrs = [0, 0, 0, game.team[0].stat.pts];
+			game.team[1].stat.pts = game.team[0].stat.pts + ptsDown;
+			game.team[1].stat.ptsQtrs = [0, 0, 0, game.team[1].stat.pts];
+			game.scrimmage = 80;
+			game.clock = clock;
+			game.down = 4;
+			game.currentPlay = new Play(game);
+
+			assert.strictEqual(game.getPlayType(), "fieldGoal");
+		}
+	});
+
 	test("kick a field goal at the end of the 2nd quarter rather than running out the clock", async () => {
 		const game = await initGameSim();
 
@@ -95,6 +153,31 @@ describe("worker/core/GameSim.football", () => {
 		game.currentPlay = new Play(game);
 
 		assert.strictEqual(game.getPlayType(), "fieldGoalLate");
+	});
+
+	test("kick a field goal in overtime if it will win the game and is very likely to go in", async () => {
+		const game = await initGameSim();
+
+		// Arbitrary score, 2nd quarter, ball on the opp 20 yard line, 6 seconds left
+		game.awaitingKickoff = undefined;
+		game.o = 0;
+		game.d = 1;
+		game.team[0].stat.pts = 21;
+		game.team[0].stat.ptsQtrs = [0, 0, 0, game.team[0].stat.pts, 0];
+		game.team[1].stat.pts = game.team[0].stat.pts;
+		game.team[1].stat.ptsQtrs = [0, 0, 0, game.team[1].stat.pts, 0];
+		game.scrimmage = 90;
+		game.clock = 10;
+		game.overtimes = 1;
+		game.overtimeState = "firstPossession";
+		game.probMadeFieldGoal = () => 0.99;
+		game.currentPlay = new Play(game);
+
+		assert(game.getPlayType() !== "fieldGoal");
+
+		game.overtimeState = "bothTeamsPossessed";
+
+		assert.strictEqual(game.getPlayType(), "fieldGoal");
 	});
 
 	test("don't punt when down late, and usually pass", async () => {
@@ -141,7 +224,7 @@ describe("worker/core/GameSim.football", () => {
 		game.checkPenalties = () => false;
 
 		game.doPass();
-		game.currentPlay.commit();
+		game.currentPlay.commit(false);
 
 		assert.strictEqual(game.team[0].stat.defSk, 0);
 		assert.strictEqual(game.team[1].stat.defSk, 1);
@@ -170,7 +253,7 @@ describe("worker/core/GameSim.football", () => {
 		game.checkPenalties = () => false;
 
 		game.doPass();
-		game.currentPlay.commit();
+		game.currentPlay.commit(false);
 
 		assert.strictEqual(game.team[0].stat.defInt, 0);
 		assert.strictEqual(game.team[1].stat.defInt, 1);

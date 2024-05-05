@@ -3,9 +3,9 @@ import { getCols, helpers } from "../util";
 import { DataTable, MoreLinks, PlayerNameLabels } from "../components";
 import type { View } from "../../common/types";
 import { LeadersTopText } from "./Leaders";
-import range from "lodash-es/range";
 import type { Col } from "../components/DataTable";
 import { makeNormalResponsive } from "../hooks/useDropdownOptions";
+import { range } from "../../common/utils";
 
 export const formatStatsDropdown = (stats: string[]) =>
 	stats.map(stat => {
@@ -29,7 +29,7 @@ const LeadersYears = ({
 		dropdownFields: {
 			stats: stat,
 			statTypesStrict: statType,
-			playoffs,
+			playoffsCombined: playoffs,
 		},
 		dropdownCustomOptions: {
 			stats: formatStatsDropdown(stats),
@@ -44,17 +44,21 @@ const LeadersYears = ({
 					title: helpers.ordinal(rank),
 					sortSequence: ["desc", "asc"],
 					sortType: "number",
-				} as Col),
+				}) as Col,
 		),
 	];
 
 	const totals = statType === "totals";
 
-	const rows = allLeaders.map(({ season, leaders }) => {
+	const rows = allLeaders.map(({ season, leaders, linkSeason }) => {
 		return {
 			key: season,
 			data: [
-				<a href={helpers.leagueUrl(["history", season])}>{season}</a>,
+				linkSeason ? (
+					<a href={helpers.leagueUrl(["history", season])}>{season}</a>
+				) : (
+					season
+				),
 				...leaders.map(p => ({
 					value: (
 						<>

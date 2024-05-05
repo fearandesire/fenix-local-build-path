@@ -12,7 +12,7 @@ const ACCOUNT_API_URL =
 				basketball: "https://account.basketball-gm.com",
 				football: "https://account.football-gm.com",
 				default: "https://account.zengm.com",
-		  });
+			});
 
 const DIFFICULTY = {
 	Easy: -0.25,
@@ -28,7 +28,7 @@ const DRAFT_BY_TEAM_OVR = bySport({
 	hockey: true,
 });
 
-const MAX_SUPPORTED_LEAGUE_VERSION = 54;
+const LEAGUE_DATABASE_VERSION = 60;
 
 const NO_LOTTERY_DRAFT_TYPES: DraftType[] = [
 	"freeAgents",
@@ -422,7 +422,10 @@ const ALL_STAR_GAME_ONLY = bySport({
 const DEFAULT_PHASE_CHANGE_REDIRECTS = [1, 3, 4, 5, 7, 8] as Phase[];
 
 const EXHIBITION_GAME_SETTINGS = [
-	"ties",
+	"maxOvertimes",
+	"shootoutRounds",
+	"maxOvertimesPlayoffs",
+	"shootoutRoundsPlayoffs",
 	"dh",
 	"numPlayersOnCourt",
 	"foulsNeededToFoulOut",
@@ -441,6 +444,7 @@ const EXHIBITION_GAME_SETTINGS = [
 	"threePointTendencyFactor",
 	"threePointAccuracyFactor",
 	"twoPointAccuracyFactor",
+	"ftAccuracyFactor",
 	"foulRateFactor",
 	"threePointers",
 	"blockFactor",
@@ -493,6 +497,21 @@ export const DEPTH_CHART_NAME = bySport({
 	hockey: "Lines",
 });
 
+export const DEFAULT_TEAM_COLORS: [string, string, string] = [
+	"#000000",
+	"#cccccc",
+	"#ffffff",
+];
+
+export const STARTING_NUM_TIMEOUTS = bySport({
+	baseball: undefined,
+	football: 3,
+	hockey: undefined,
+
+	// Should actually be 7, but since timeouts are only used at the end of the game currently, it's silly to have those extra 5 timeouts lying around all game
+	basketball: 2,
+});
+
 export {
 	AD_DIVS,
 	ALL_STAR_GAME_ONLY,
@@ -516,7 +535,7 @@ export {
 	GAME_NAME,
 	GRACE_PERIOD,
 	JERSEYS,
-	MAX_SUPPORTED_LEAGUE_VERSION,
+	LEAGUE_DATABASE_VERSION,
 	MOBILE_AD_BOTTOM_MARGIN,
 	MOOD_TRAITS,
 	NO_LOTTERY_DRAFT_TYPES,

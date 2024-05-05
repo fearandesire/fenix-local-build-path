@@ -22,14 +22,7 @@ const updatePlayMenu = async () => {
 		? local.autoPlayUntil.season - g.get("season")
 		: 0;
 
-	const allOptions: {
-		[key: string]: {
-			id?: string;
-			label: string;
-			url?: string;
-			key?: string;
-		};
-	} = {
+	const allOptions = {
 		stop: {
 			label: "Stop",
 			key: "s",
@@ -165,9 +158,25 @@ const updatePlayMenu = async () => {
 			url: helpers.leagueUrl(["expansion_draft"]),
 			label: "Continue expansion draft setup",
 		},
-	};
+		autoRelocate: {
+			url: helpers.leagueUrl(["auto_relocate"]),
+			label: "Vote on proposed team relocation",
+		},
+		autoExpand: {
+			url: helpers.leagueUrl(["auto_expand"]),
+			label: "Vote on proposed league expansion",
+		},
+	} satisfies Record<
+		string,
+		{
+			id?: string;
+			label: string;
+			url?: string;
+			key?: string;
+		}
+	>;
 
-	let keys: string[] = [];
+	let keys: (keyof typeof allOptions)[] = [];
 
 	if (
 		g.get("phase") === PHASE.DRAFT ||
@@ -195,7 +204,7 @@ const updatePlayMenu = async () => {
 		g.get("phase") === PHASE.REGULAR_SEASON ||
 		g.get("phase") === PHASE.AFTER_TRADE_DEADLINE
 	) {
-		const untilMore: string[] = [];
+		const untilMore: typeof keys = [];
 
 		const schedule = await season.getSchedule();
 		const tradeDeadlineIndex = schedule.findIndex(
@@ -219,7 +228,7 @@ const updatePlayMenu = async () => {
 		}
 
 		// Regular season - pre trading deadline
-		keys = bySport({
+		keys = bySport<typeof keys>({
 			football: ["week", "weekLive", "month", ...untilMore, "untilPlayoffs"],
 			default: [
 				"day",
@@ -284,11 +293,16 @@ const updatePlayMenu = async () => {
 			keys.unshift("viewAllStar");
 		}
 	} else if (g.get("phase") === PHASE.DRAFT_LOTTERY) {
-		if (g.get("repeatSeason")) {
+		const repeatSeasonType = g.get("repeatSeason")?.type;
+		if (repeatSeasonType === "playersAndRosters") {
 			keys = ["untilPreseason"];
 		} else {
-			if (g.get("draftType") === "freeAgents") {
-				// Special case in actions.ts will call the draft phases before this automatically
+			if (
+				g.get("draftType") === "freeAgents" ||
+				repeatSeasonType === "players"
+			) {
+				// For draftType freeAgents - special case in actions.ts will call the draft phases before this automatically
+				// For repeatSeasonType players - there is no draft
 				keys = ["untilResignPlayers"];
 			} else {
 				// Offseason - pre draft
@@ -314,6 +328,14 @@ const updatePlayMenu = async () => {
 
 	const unreadMessage = await lock.unreadMessage();
 	const negotiationInProgress = await lock.negotiationInProgress();
+
+	if (g.get("autoRelocate")) {
+		keys = ["autoRelocate"];
+	}
+
+	if (g.get("autoExpand")) {
+		keys = ["autoExpand"];
+	}
 
 	if (g.get("expansionDraft").phase === "protection") {
 		keys = ["expansionDraft"];
@@ -350,6 +372,7 @@ const updatePlayMenu = async () => {
 
 	const someOptions: Option[] = keys.map(id => {
 		let code;
+		// @ts-expect-error
 		if (allOptions[id].key) {
 			// @ts-expect-error
 			code = `Key${allOptions[id].key.toUpperCase()}`;

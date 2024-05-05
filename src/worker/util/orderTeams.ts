@@ -1,12 +1,11 @@
-import { groupBy } from "../../common/groupBy";
-import orderBy from "lodash-es/orderBy";
-import { helpers } from ".";
+import { groupBy, orderBy } from "../../common/utils";
+import helpers from "./helpers";
 import type { TIEBREAKERS } from "../../common";
 import type { HeadToHead } from "../../common/types";
 import { team } from "../core";
 import { idb } from "../db";
 import g from "./g";
-import random from "./random";
+import { uniformSeed } from "../../common/random";
 
 export const getTiebreakers = (season: number) => {
 	const tiebreakers = [...g.get("tiebreakers", season)];
@@ -203,8 +202,8 @@ export const breakTies = <T extends BaseTeam>(
 						if (factor > 0) {
 							won += factor * t2.seasonAttrs.won;
 							lost += factor * t2.seasonAttrs.lost;
-							tied += factor * (t2.seasonAttrs.tied ?? 0);
-							otl += factor * (t2.seasonAttrs.otl ?? 0);
+							tied += factor * t2.seasonAttrs.tied;
+							otl += factor * t2.seasonAttrs.otl;
 						}
 					}
 				}
@@ -471,7 +470,7 @@ export const breakTies = <T extends BaseTeam>(
 		coinFlip: [
 			[
 				(t: T) =>
-					random.uniformSeed(
+					uniformSeed(
 						t.tid + options.season + (t.seasonAttrs.won + t.seasonAttrs.winp),
 					),
 				"asc",

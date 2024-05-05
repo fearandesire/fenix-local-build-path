@@ -60,12 +60,22 @@ const attempt = async (valueChangeKey: number) => {
 
 	if ((r < 0.7 || draftPicks.length === 0) && players.length > 0) {
 		// Weight by player value - good player more likely to be in trade
-		pids.push(random.choice(players, p => p.value).pid);
+		const p = random.choice(players, p => p.value);
+		if (!p) {
+			return false;
+		}
+		pids.push(p.pid);
 	} else if ((r < 0.85 || players.length === 0) && draftPicks.length > 0) {
 		dpids.push(random.choice(draftPicks).dpid);
 	} else {
-		pids.push(random.choice(players, p => p.value).pid);
-		dpids.push(random.choice(draftPicks).dpid);
+		// Weight by player value - good player more likely to be in trade
+		const p = random.choice(players, p => p.value);
+		const dp = random.choice(draftPicks);
+		if (!p || !dp) {
+			return false;
+		}
+		pids.push(p.pid);
+		dpids.push(dp.dpid);
 	}
 
 	const teams0: TradeTeams = [

@@ -36,6 +36,7 @@ const keys = [
 	"brotherRate",
 	"sonRate",
 	"forceRetireAge",
+	"forceRetireSeasons",
 	"salaryCapType",
 	"numGamesPlayoffSeries",
 	"numPlayoffByes",
@@ -55,6 +56,7 @@ const keys = [
 	"threePointTendencyFactor",
 	"threePointAccuracyFactor",
 	"twoPointAccuracyFactor",
+	"ftAccuracyFactor",
 	"blockFactor",
 	"stealFactor",
 	"turnoverFactor",
@@ -70,7 +72,10 @@ const keys = [
 	"challengeThanosMode",
 	"realPlayerDeterminism",
 	"repeatSeason",
-	"ties",
+	"maxOvertimes",
+	"maxOvertimesPlayoffs",
+	"shootoutRounds",
+	"shootoutRoundsPlayoffs",
 	"otl",
 	"spectator",
 	"elam",
@@ -156,6 +161,14 @@ const keys = [
 	"numWatchColors",
 	"giveMeWorstRoster",
 	"groupScheduleSeries",
+	"autoExpandProb",
+	"autoExpandNumTeams",
+	"autoExpandMaxNumTeams",
+	"autoExpandGeo",
+	"autoRelocateProb",
+	"autoRelocateGeo",
+	"autoRelocateRealign",
+	"autoRelocateRebrand",
 ] as const;
 
 export type Settings = Pick<
@@ -171,13 +184,21 @@ export type Settings = Pick<
 		| "giveMeWorstRoster"
 	>
 > & {
-	repeatSeason: boolean;
+	repeatSeason:
+		| NonNullable<GameAttributesLeague["repeatSeason"]>["type"]
+		| "disabled";
 	noStartingInjuries: boolean;
 	realDraftRatings: Exclude<
 		GameAttributesLeague["realDraftRatings"],
 		undefined
 	>;
-	randomization: "none" | "shuffle" | "debuts" | "debutsForever";
+	randomization:
+		| "none"
+		| "shuffle"
+		| "debuts"
+		| "debutsKeepCurrent"
+		| "debutsForever"
+		| "debutsForeverKeepCurrent";
 	realStats: GetLeagueOptionsReal["realStats"];
 	injuries: InjuriesSetting;
 	tragicDeaths: TragicDeaths;
@@ -222,6 +243,7 @@ const updateSettings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			brotherRate: g.get("brotherRate"),
 			sonRate: g.get("sonRate"),
 			forceRetireAge: g.get("forceRetireAge"),
+			forceRetireSeasons: g.get("forceRetireSeasons"),
 			salaryCapType: g.get("salaryCapType"),
 			numGamesPlayoffSeries: g.get("numGamesPlayoffSeries"),
 			numPlayoffByes: g.get("numPlayoffByes"),
@@ -241,6 +263,7 @@ const updateSettings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			threePointTendencyFactor: g.get("threePointTendencyFactor"),
 			threePointAccuracyFactor: g.get("threePointAccuracyFactor"),
 			twoPointAccuracyFactor: g.get("twoPointAccuracyFactor"),
+			ftAccuracyFactor: g.get("ftAccuracyFactor"),
 			blockFactor: g.get("blockFactor"),
 			stealFactor: g.get("stealFactor"),
 			turnoverFactor: g.get("turnoverFactor"),
@@ -255,8 +278,11 @@ const updateSettings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			challengeSisyphusMode: g.get("challengeSisyphusMode"),
 			challengeThanosMode: g.get("challengeThanosMode"),
 			realPlayerDeterminism: g.get("realPlayerDeterminism"),
-			repeatSeason: !!g.get("repeatSeason"),
-			ties: g.get("ties"),
+			repeatSeason: g.get("repeatSeason")?.type ?? "disabled",
+			maxOvertimes: g.get("maxOvertimes"),
+			maxOvertimesPlayoffs: g.get("maxOvertimesPlayoffs"),
+			shootoutRounds: g.get("shootoutRounds"),
+			shootoutRoundsPlayoffs: g.get("shootoutRoundsPlayoffs"),
 			otl: g.get("otl"),
 			spectator: g.get("spectator"),
 			elam: g.get("elam"),
@@ -344,6 +370,14 @@ const updateSettings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			minRetireAge: g.get("minRetireAge"),
 			numWatchColors: g.get("numWatchColors"),
 			groupScheduleSeries: g.get("groupScheduleSeries"),
+			autoExpandProb: g.get("autoExpandProb"),
+			autoExpandNumTeams: g.get("autoExpandNumTeams"),
+			autoExpandMaxNumTeams: g.get("autoExpandMaxNumTeams"),
+			autoExpandGeo: g.get("autoExpandGeo"),
+			autoRelocateProb: g.get("autoRelocateProb"),
+			autoRelocateGeo: g.get("autoRelocateGeo"),
+			autoRelocateRealign: g.get("autoRelocateRealign"),
+			autoRelocateRebrand: g.get("autoRelocateRebrand"),
 
 			// Might as well be undefined, because it will never be saved from this form, only the new league form
 			realDraftRatings: g.get("realDraftRatings") ?? "rookie",

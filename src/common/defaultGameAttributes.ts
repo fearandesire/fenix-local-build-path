@@ -34,6 +34,9 @@ export const gameAttributesKeysGameState: GameAttributeKey[] = [
 	"season",
 	"startingSeason",
 	"numDraftPicksCurrent",
+	"expansionDraft",
+	"autoRelocate",
+	"autoExpand",
 ];
 export const gameAttributesKeysTeams: GameAttributeKey[] = ["confs", "divs"];
 export const gameAttributesCache: GameAttributeKey[] = [
@@ -66,6 +69,7 @@ const gameAttributesKeysSportSpecific = {
 		"threePointTendencyFactor",
 		"threePointAccuracyFactor",
 		"twoPointAccuracyFactor",
+		"ftAccuracyFactor",
 		"blockFactor",
 		"stealFactor",
 		"turnoverFactor",
@@ -85,7 +89,6 @@ const gameAttributesKeysSportSpecific = {
 		"numPlayersDunk",
 		"numPlayersThree",
 		"quarterLength",
-		"ties",
 		"numPlayersOnCourt",
 		"pace",
 		"allStarDunk",
@@ -95,7 +98,6 @@ const gameAttributesKeysSportSpecific = {
 		"fantasyPoints",
 		"foulRateFactor",
 		"quarterLength",
-		"ties",
 		"passFactor",
 		"rushYdsFactor",
 		"passYdsFactor",
@@ -112,7 +114,6 @@ const gameAttributesKeysSportSpecific = {
 	] as GameAttributeKey[],
 	hockey: [
 		"quarterLength",
-		"ties",
 		"hitFactor",
 		"giveawayFactor",
 		"takeawayFactor",
@@ -155,7 +156,7 @@ const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	minRosterSize: 10,
 	maxRosterSize: 15,
 	softCapTradeSalaryMatch: 125,
-	numGames: 82, // per season
+	numGames: wrap(82), // per season
 	numGamesDiv: 16,
 	numGamesConf: 36,
 	otherTeamsWantToHire: false,
@@ -178,13 +179,17 @@ const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	sonRate: 0.02,
 	brotherRate: 0.02,
 	forceRetireAge: 0,
+	forceRetireSeasons: 0,
 	minRetireAge: 26,
 	groupScheduleSeries: false,
 
 	salaryCapType: "soft",
 
-	// This enables ties in the UI and game data saving, but GameSim still needs to actually return ties. In other words... you can't just enable this for basketball and have ties happen in basketball!
-	ties: wrap(false),
+	maxOvertimes: wrap(null),
+	shootoutRounds: wrap(0),
+	maxOvertimesPlayoffs: null,
+	shootoutRoundsPlayoffs: 0,
+
 	otl: wrap(false),
 
 	draftType: "nba2019",
@@ -198,7 +203,7 @@ const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	playersRefuseToNegotiate: true,
 	allStarGame: 0.7,
 	allStarNum: 12,
-	allStarType: "draft",
+	allStarType: "byConf",
 	allStarDunk: true,
 	allStarThree: true,
 	budget: true,
@@ -214,6 +219,7 @@ const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	threePointTendencyFactor: 1,
 	threePointAccuracyFactor: 1,
 	twoPointAccuracyFactor: 1,
+	ftAccuracyFactor: 1,
 	blockFactor: 1,
 	stealFactor: 1,
 	turnoverFactor: 1,
@@ -235,7 +241,7 @@ const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	realPlayerDeterminism: 0,
 	spectator: false,
 	elam: false,
-	elamASG: true,
+	elamASG: false,
 	elamMinutes: 4,
 	elamOvertime: false,
 	elamPoints: 8,
@@ -278,6 +284,16 @@ const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	heightFactor: 1,
 	weightFactor: 1,
 	numWatchColors: 1,
+	autoExpand: undefined,
+	autoExpandProb: 0,
+	autoExpandNumTeams: 2,
+	autoExpandMaxNumTeams: 40,
+	autoExpandGeo: "naFirst",
+	autoRelocate: undefined,
+	autoRelocateProb: 0,
+	autoRelocateGeo: "naFirst",
+	autoRelocateRebrand: true,
+	autoRelocateRealign: true,
 
 	// These will always be overwritten when creating a league, just here for TypeScript
 	lid: 0,
@@ -340,7 +356,7 @@ const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 export const footballOverrides: Partial<GameAttributesLeagueWithHistory> =
 	process.env.NODE_ENV === "test" || isSport("football")
 		? {
-				numGames: 17,
+				numGames: wrap(17),
 				numGamesDiv: 6,
 				numGamesConf: 6,
 				quarterLength: 15,
@@ -348,7 +364,7 @@ export const footballOverrides: Partial<GameAttributesLeagueWithHistory> =
 				numPlayoffByes: wrap(2),
 				stopOnInjuryGames: 1,
 				salaryCapType: "hard",
-				ties: wrap(true),
+				maxOvertimes: wrap(1),
 				draftType: "noLottery",
 				numDraftRounds: 7,
 				draftAges: [21, 22],
@@ -385,7 +401,8 @@ export const footballOverrides: Partial<GameAttributesLeagueWithHistory> =
 				fantasyPoints: "standard",
 				draftPickAutoContract: false,
 				pace: 1,
-		  }
+				hofFactor: 1.2,
+			}
 		: {};
 
 export const hockeyOverrides: Partial<GameAttributesLeagueWithHistory> =
@@ -419,14 +436,16 @@ export const hockeyOverrides: Partial<GameAttributesLeagueWithHistory> =
 				draftPickAutoContractRounds: 2,
 				rookieContractLengths: [3],
 				pace: 1,
-		  }
+				maxOvertimes: wrap(1),
+				shootoutRounds: wrap(3),
+			}
 		: {};
 
 // Extra condition for NODE_ENV is because we use this export only in tests, so we don't want it in the basketball bundle!
 export const baseballOverrides: Partial<GameAttributesLeagueWithHistory> =
 	process.env.NODE_ENV === "test" || isSport("baseball")
 		? {
-				numGames: 162,
+				numGames: wrap(162),
 				numGamesDiv: 76,
 				numGamesConf: null,
 				numGamesPlayoffSeries: wrap([3, 5, 7, 7]),
@@ -456,7 +475,7 @@ export const baseballOverrides: Partial<GameAttributesLeagueWithHistory> =
 				draftPickAutoContractRounds: 4,
 				draftPickAutoContract: false,
 				groupScheduleSeries: true,
-		  }
+			}
 		: {};
 
 if (isSport("football")) {

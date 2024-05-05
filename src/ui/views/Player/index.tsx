@@ -11,7 +11,7 @@ import TopStuff from "./TopStuff";
 import { isSport, PLAYER } from "../../../common";
 import { expandFieldingStats } from "../../util/expandFieldingStats.baseball";
 import TeamAbbrevLink from "../../components/TeamAbbrevLink";
-import hideableSectionFactory from "../../components/hideableSectionFactory";
+import HideableSection from "../../components/HideableSection";
 
 const SeasonLink = ({
 	className,
@@ -44,7 +44,6 @@ const StatsTable = ({
 	p,
 	stats,
 	superCols,
-	HideableSection,
 	leaders,
 }: {
 	name: string;
@@ -52,20 +51,21 @@ const StatsTable = ({
 	p: View<"player">["player"];
 	stats: string[];
 	superCols?: any[];
-	HideableSection: ReturnType<typeof hideableSectionFactory>;
 	leaders: View<"player">["leaders"];
 }) => {
 	const hasRegularSeasonStats = p.careerStats.gp > 0;
 	const hasPlayoffStats = p.careerStatsPlayoffs.gp > 0;
 
 	// Show playoffs by default if that's all we have
-	const [playoffs, setPlayoffs] = useState(!hasRegularSeasonStats);
+	const [playoffs, setPlayoffs] = useState<boolean | "combined">(
+		!hasRegularSeasonStats,
+	);
 
 	// If game sim means we switch from having no stats to having some stats, make sure we're showing what we have
-	if (hasRegularSeasonStats && !hasPlayoffStats && playoffs) {
+	if (hasRegularSeasonStats && !hasPlayoffStats && playoffs === true) {
 		setPlayoffs(false);
 	}
-	if (!hasRegularSeasonStats && hasPlayoffStats && !playoffs) {
+	if (!hasRegularSeasonStats && hasPlayoffStats && playoffs === false) {
 		setPlayoffs(true);
 	}
 
@@ -74,7 +74,12 @@ const StatsTable = ({
 	}
 
 	let playerStats = p.stats.filter(ps => ps.playoffs === playoffs);
-	const careerStats = playoffs ? p.careerStatsPlayoffs : p.careerStats;
+	const careerStats =
+		playoffs === "combined"
+			? p.careerStatsCombined
+			: playoffs
+				? p.careerStatsPlayoffs
+				: p.careerStats;
 
 	if (onlyShowIf !== undefined) {
 		let display = false;
@@ -144,19 +149,26 @@ const StatsTable = ({
 		];
 	}
 
-	const leadersType = playoffs ? "playoffs" : "regularSeason";
+	const leadersType =
+		playoffs === "combined"
+			? "combined"
+			: playoffs === true
+				? "playoffs"
+				: "regularSeason";
 
 	let hasLeader = false;
-	LEADERS_LOOP: for (const row of Object.values(leaders)) {
-		if (row?.attrs.has("age")) {
-			hasLeader = true;
-			break;
-		}
-
-		for (const stat of stats) {
-			if (row?.[leadersType].has(stat)) {
+	if (leadersType) {
+		LEADERS_LOOP: for (const row of Object.values(leaders)) {
+			if (row?.attrs.has("age")) {
 				hasLeader = true;
-				break LEADERS_LOOP;
+				break;
+			}
+
+			for (const stat of stats) {
+				if (row?.[leadersType].has(stat)) {
+					hasLeader = true;
+					break LEADERS_LOOP;
+				}
 			}
 		}
 	}
@@ -171,8 +183,8 @@ const StatsTable = ({
 					<li className="nav-item">
 						<button
 							className={classNames("nav-link", {
-								active: !playoffs,
-								"border-bottom": !playoffs,
+								active: playoffs === false,
+								"border-bottom": playoffs === false,
 							})}
 							onClick={() => {
 								setPlayoffs(false);
@@ -186,14 +198,29 @@ const StatsTable = ({
 					<li className="nav-item">
 						<button
 							className={classNames("nav-link", {
-								active: playoffs,
-								"border-bottom": playoffs,
+								active: playoffs === true,
+								"border-bottom": playoffs === true,
 							})}
 							onClick={() => {
 								setPlayoffs(true);
 							}}
 						>
 							Playoffs
+						</button>
+					</li>
+				) : null}
+				{hasRegularSeasonStats && hasPlayoffStats ? (
+					<li className="nav-item">
+						<button
+							className={classNames("nav-link", {
+								active: playoffs === "combined",
+								"border-bottom": playoffs === "combined",
+							})}
+							onClick={() => {
+								setPlayoffs("combined");
+							}}
+						>
+							Combined
 						</button>
 					</li>
 				) : null}
@@ -225,7 +252,7 @@ const StatsTable = ({
 										<SeasonIcons
 											season={ps.season}
 											awards={p.awards}
-											playoffs={playoffs}
+											playoffs={playoffs === true}
 										/>
 									</>
 								),
@@ -309,7 +336,7 @@ const Player2 = ({
 			player.tid !== PLAYER.UNDRAFTED
 				? {
 						playerProfile: "overview",
-				  }
+					}
 				: undefined,
 		dropdownCustomURL: fields => {
 			let gameLogSeason;
@@ -331,8 +358,6 @@ const Player2 = ({
 	});
 
 	const awardsGrouped = groupAwards(player.awards);
-
-	const HideableSection = hideableSectionFactory(undefined);
 
 	let hasLeader = false;
 	for (const row of Object.values(leaders)) {
@@ -376,7 +401,6 @@ const Player2 = ({
 					stats={stats}
 					superCols={superCols}
 					p={player}
-					HideableSection={HideableSection}
 					leaders={leaders}
 				/>
 			))}

@@ -14,7 +14,7 @@ import type {
 	PlayerStatType,
 } from "../../common/types";
 import { POS_NUMBERS } from "../../common/constants.baseball";
-import maxBy from "lodash-es/maxBy";
+import { maxBy } from "../../common/utils";
 
 export const statTypes = bySport({
 	baseball: [
@@ -91,7 +91,7 @@ export const getStats = (statTypePlus: string) => {
 const getPlayerStats = async (
 	statTypeInput: string | undefined,
 	season: number | "career",
-	playoffs: "playoffs" | "regularSeason",
+	playoffs: "playoffs" | "regularSeason" | "combined",
 ) => {
 	// This is the value form the form/URL (or a random one), which confusingly is not the same as statType passed to playersPlus
 	const statTypePlus =
@@ -137,6 +137,7 @@ const getPlayerStats = async (
 		attrs: [
 			"pid",
 			"name",
+			"tid",
 
 			// draft is needed to know who is undrafted, for the tooltip
 			"draft",
@@ -148,7 +149,8 @@ const getPlayerStats = async (
 		tid: undefined,
 		statType,
 		playoffs: playoffs === "playoffs",
-		regularSeason: playoffs !== "playoffs",
+		regularSeason: playoffs === "regularSeason",
+		combined: playoffs === "combined",
 		mergeStats: "totOnly",
 		fuzz: true,
 	});
@@ -217,6 +219,17 @@ const getPlayerStats = async (
 		});
 	}
 
+	if (g.get("challengeNoRatings") && ratings.length > 0) {
+		for (const p of players) {
+			console.log(p);
+			if (p.tid !== PLAYER.RETIRED) {
+				for (const key of ratings) {
+					p.ratings[key] = 50;
+				}
+			}
+		}
+	}
+
 	const stats = getStats(statTypePlus);
 	return { players, stats, statType: statTypePlus };
 };
@@ -231,6 +244,7 @@ const updatePlayers = async (
 	const statType = `statType${axis}` as const;
 	const playoffs = `playoffs${axis}` as const;
 	if (
+		updateEvents.includes("firstRun") ||
 		(inputs[season] === g.get("season") &&
 			(updateEvents.includes("gameSim") ||
 				updateEvents.includes("playerMovement"))) ||
@@ -252,7 +266,6 @@ const updatePlayers = async (
 			inputStat !== undefined && statForAxis.stats.includes(inputStat)
 				? inputStat
 				: random.choice(statForAxis.stats);
-		console.log(statForAxis.players);
 
 		return {
 			[season]: inputs[season],
@@ -288,8 +301,8 @@ const updateClientSide = (
 			seasonY: number | "career";
 			statTypeX: string;
 			statTypeY: string;
-			playoffsX: "playoffs" | "regularSeason";
-			playoffsY: "playoffs" | "regularSeason";
+			playoffsX: "playoffs" | "regularSeason" | "combined";
+			playoffsY: "playoffs" | "regularSeason" | "combined";
 			playersX: any[];
 			playersY: any[];
 			statsX: string[];

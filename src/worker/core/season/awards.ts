@@ -20,6 +20,9 @@ import type {
 	TeamFiltered,
 } from "../../../common/types";
 import { POS_NUMBERS_INVERSE } from "../../../common/constants.baseball";
+import season from ".";
+import addAward from "../player/addAward";
+import { maxBy } from "../../../common/utils";
 
 export type AwardsByPlayer = {
 	pid: number;
@@ -186,11 +189,7 @@ const getPlayers = async (season: number): Promise<PlayerFiltered[]> => {
 	> = {};
 	for (const teamSeason of teamSeasons) {
 		teamInfos[teamSeason.tid] = {
-			gp:
-				teamSeason.won +
-				teamSeason.lost +
-				(teamSeason.tied ?? 0) +
-				(teamSeason.otl ?? 0),
+			gp: helpers.getTeamSeasonGp(teamSeason),
 			winp: helpers.calcWinp(teamSeason),
 		};
 	}
@@ -294,6 +293,8 @@ const teamAwards = async (
 		throw new Error("No teams found");
 	}
 
+	const ties = season.hasTies("current");
+
 	const bestRecord = {
 		tid: teams[0].tid,
 		abbrev: teams[0].seasonAttrs.abbrev,
@@ -301,7 +302,7 @@ const teamAwards = async (
 		name: teams[0].seasonAttrs.name,
 		won: teams[0].seasonAttrs.won,
 		lost: teams[0].seasonAttrs.lost,
-		tied: g.get("ties", "current") ? teams[0].seasonAttrs.tied : undefined,
+		tied: ties ? teams[0].seasonAttrs.tied : undefined,
 		otl: g.get("otl", "current") ? teams[0].seasonAttrs.otl : undefined,
 	};
 	const bestRecordConfs = await Promise.all(
@@ -323,7 +324,7 @@ const teamAwards = async (
 				name: t.seasonAttrs.name,
 				won: t.seasonAttrs.won,
 				lost: t.seasonAttrs.lost,
-				tied: g.get("ties", "current") ? t.seasonAttrs.tied : undefined,
+				tied: ties ? t.seasonAttrs.tied : undefined,
 				otl: g.get("otl", "current") ? t.seasonAttrs.otl : undefined,
 			};
 		}),
@@ -346,11 +347,12 @@ const leagueLeaders = (
 ) => {
 	const numGames = g.get("numGames");
 	const factor =
-		(numGames / defaultGameAttributes.numGames) * helpers.quarterLengthFactor(); // To handle changes in number of games and playing time
+		(numGames / defaultGameAttributes.numGames[0].value) *
+		helpers.quarterLengthFactor(); // To handle changes in number of games and playing time
 
 	for (const cat of categories) {
-		const p = players
-			.filter(p2 => {
+		const p = maxBy(
+			players.filter(p2 => {
 				// In basketball, everything except gp is a per-game average, so we need to scale them by games played to check against minValue. In other sports, this whole check is unneccessary currently, because the stats are season totals not per game averages.
 				let playerValue;
 				if (!isSport("basketball")) {
@@ -362,13 +364,9 @@ const leagueLeaders = (
 					playerValue >= cat.minValue * factor ||
 					p2.currentStats.gp >= 0.85 * numGames
 				);
-			})
-			.reduce((maxPlayer, currentPlayer) => {
-				return currentPlayer.currentStats[cat.stat] >
-					maxPlayer.currentStats[cat.stat]
-					? currentPlayer
-					: maxPlayer;
-			}, players[0]);
+			}),
+			p => p.currentStats[cat.stat],
+		);
 
 		if (p) {
 			awardsByPlayer.push({
@@ -512,7 +510,7 @@ const saveAwardsByPlayer = async (
 		if (p && pid != undefined) {
 			for (const awardByPlayer of awardsByPlayer) {
 				if (awardByPlayer.pid === pid) {
-					p.awards.push({
+					addAward(p, {
 						season,
 						type: awardByPlayer.type,
 					});

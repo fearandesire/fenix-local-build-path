@@ -1,12 +1,14 @@
 import classNames from "classnames";
 import { BoxScoreRow, BoxScoreWrapper, MoreLinks } from "../components";
 import useTitleBar from "../hooks/useTitleBar";
-import { helpers, useLocalPartial } from "../util";
+import { helpers } from "../util";
 import useClickable from "../hooks/useClickable";
 import type { View, Game } from "../../common/types";
 import { bySport, isSport } from "../../common";
+import getWinner from "../../common/getWinner";
+import formatScoreWithShootout from "../../common/formatScoreWithShootout";
 
-const StatsRow = ({ p, ...props }: { i: number; p: any }) => {
+const StatsRow = ({ p, ...props }: { i: number; p: any; season: number }) => {
 	const { clicked, toggleClicked } = useClickable();
 
 	const classes = classNames({
@@ -73,8 +75,6 @@ const GamesList = ({
 	season: number;
 	tid: number;
 }) => {
-	const { teamInfoCache } = useLocalPartial(["teamInfoCache"]);
-
 	if (season < currentSeason && gamesList.games.length === 0) {
 		return <NoGamesMessage warnAboutDelete />;
 	}
@@ -89,7 +89,7 @@ const GamesList = ({
 				</tr>
 			</thead>
 			<tbody>
-				{gamesList.abbrev !== abbrev ? (
+				{gamesList.tid !== tid ? (
 					<tr>
 						<td colSpan={3}>Loading...</td>
 					</tr>
@@ -99,14 +99,8 @@ const GamesList = ({
 						const user = home ? 0 : 1;
 						const other = home ? 1 : 0;
 
-						let result;
-						if (gm.teams[user].pts > gm.teams[other].pts) {
-							result = "W";
-						} else if (gm.teams[user].pts < gm.teams[other].pts) {
-							result = "L";
-						} else {
-							result = "T";
-						}
+						const winner = getWinner(gm.teams);
+						const result = winner === user ? "W" : winner === other ? "L" : "T";
 
 						const overtimeText = helpers.overtimeText(
 							gm.overtimes,
@@ -116,13 +110,17 @@ const GamesList = ({
 							overtimeText === ""
 								? ""
 								: isSport("baseball")
-								? ` (${overtimeText})`
-								: ` ${overtimeText}`;
+									? ` (${overtimeText})`
+									: ` ${overtimeText}`;
 
-						const oppAbbrev =
-							abbrev === "special"
-								? "ASG"
-								: teamInfoCache[gm.teams[other].tid]?.abbrev;
+						const oppAbbrev = gamesList.abbrevs[gm.teams[other].tid];
+
+						const url = helpers.leagueUrl([
+							"game_log",
+							abbrev === "special" ? abbrev : `${abbrev}_${tid}`,
+							season,
+							gm.gid,
+						]);
 
 						return (
 							<tr
@@ -130,26 +128,14 @@ const GamesList = ({
 								className={gm.gid === gid ? "table-info" : undefined}
 							>
 								<td className="game-log-cell">
-									<a
-										href={helpers.leagueUrl([
-											"game_log",
-											abbrev === "special" ? abbrev : `${abbrev}_${tid}`,
-											season,
-											gm.gid,
-										])}
-									>
+									<a href={url}>
 										{home ? "" : "@"}
 										{oppAbbrev}
 									</a>
 								</td>
 								<td className={classNames("game-log-cell")}>
 									<a
-										href={helpers.leagueUrl([
-											"game_log",
-											abbrev === "special" ? abbrev : `${abbrev}_${tid}`,
-											season,
-											gm.gid,
-										])}
+										href={url}
 										className={
 											gm.forceWin !== undefined ? "alert-god-mode" : undefined
 										}
@@ -158,15 +144,8 @@ const GamesList = ({
 									</a>
 								</td>
 								<td className="game-log-cell">
-									<a
-										href={helpers.leagueUrl([
-											"game_log",
-											abbrev === "special" ? abbrev : `${abbrev}_${tid}`,
-											season,
-											gm.gid,
-										])}
-									>
-										{gm.teams[user].pts}-{gm.teams[other].pts}
+									<a href={url}>
+										{formatScoreWithShootout(gm.teams[user], gm.teams[other])}
 										{overtimes}
 									</a>
 								</td>

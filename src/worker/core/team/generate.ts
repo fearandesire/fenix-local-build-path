@@ -3,8 +3,10 @@ import type { Team } from "../../../common/types";
 import {
 	DEFAULT_JERSEY,
 	DEFAULT_PLAY_THROUGH_INJURIES,
+	DEFAULT_TEAM_COLORS,
 	isSport,
 } from "../../../common";
+import finances from "../finances";
 
 /**
  * Create a new team object.
@@ -16,6 +18,14 @@ import {
 // If I ever type this, ensure that at least one of budget and popRank is set
 const generate = (tm: any): Team => {
 	const strategy = Object.hasOwn(tm, "strategy") ? tm.strategy : "rebuilding";
+
+	const budget = tm.budget ?? {
+		coaching: finances.defaultBudgetLevel(tm.popRank),
+		facilities: finances.defaultBudgetLevel(tm.popRank),
+		health: finances.defaultBudgetLevel(tm.popRank),
+		scouting: finances.defaultBudgetLevel(tm.popRank),
+		ticketPrice: helpers.defaultTicketPrice(tm.popRank),
+	};
 
 	const t: Team = {
 		tid: tm.tid,
@@ -29,49 +39,16 @@ const generate = (tm: any): Team => {
 		imgURL: tm.imgURL ?? "",
 		imgURLSmall: tm.imgURLSmall === "" ? undefined : tm.imgURLSmall,
 
-		budget: {
-			ticketPrice: {
-				amount: Object.hasOwn(tm, "budget")
-					? tm.budget.ticketPrice.amount
-					: helpers.defaultTicketPrice(tm.popRank),
-				rank: Object.hasOwn(tm, "budget")
-					? tm.budget.ticketPrice.rank
-					: tm.popRank,
-			},
-			scouting: {
-				amount: Object.hasOwn(tm, "budget")
-					? tm.budget.scouting.amount
-					: helpers.defaultBudgetAmount(tm.popRank),
-				rank: Object.hasOwn(tm, "budget")
-					? tm.budget.scouting.rank
-					: tm.popRank,
-			},
-			coaching: {
-				amount: Object.hasOwn(tm, "budget")
-					? tm.budget.coaching.amount
-					: helpers.defaultBudgetAmount(tm.popRank),
-				rank: Object.hasOwn(tm, "budget")
-					? tm.budget.coaching.rank
-					: tm.popRank,
-			},
-			health: {
-				amount: Object.hasOwn(tm, "budget")
-					? tm.budget.health.amount
-					: helpers.defaultBudgetAmount(tm.popRank),
-				rank: Object.hasOwn(tm, "budget") ? tm.budget.health.rank : tm.popRank,
-			},
-			facilities: {
-				amount: Object.hasOwn(tm, "budget")
-					? tm.budget.facilities.amount
-					: helpers.defaultBudgetAmount(tm.popRank),
-				rank: Object.hasOwn(tm, "budget")
-					? tm.budget.facilities.rank
-					: tm.popRank,
-			},
+		budget,
+		initialBudget: tm.initialBudget ?? {
+			coaching: budget.coaching,
+			facilities: budget.facilities,
+			health: budget.health,
+			scouting: budget.scouting,
 		},
 		strategy,
 		depth: tm.depth,
-		colors: tm.colors ? tm.colors : ["#000000", "#cccccc", "#ffffff"],
+		colors: tm.colors ? tm.colors : DEFAULT_TEAM_COLORS,
 		jersey: tm.jersey ?? DEFAULT_JERSEY,
 		pop: tm.pop ?? 0,
 		stadiumCapacity: tm.stadiumCapacity ?? g.get("defaultStadiumCapacity"),

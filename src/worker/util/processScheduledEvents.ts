@@ -430,22 +430,13 @@ const processUnretirePlayer = async (pid: number) => {
 	const lastRatingsSeason = p.ratings.at(-1)!.season;
 	const diff = g.get("season") - lastRatingsSeason;
 	if (diff > 0) {
-		const teamSeasons = await idb.cache.teamSeasons.indexGetAll(
-			"teamSeasonsByTidSeason",
-			[
-				[g.get("userTid"), g.get("season") - 2],
-				[g.get("userTid"), g.get("season")],
-			],
-		);
-		const scoutingRank = finances.getRankLastThree(
-			teamSeasons,
-			"expenses",
-			"scouting",
-		);
+		const scoutingLevel = await finances.getLevelLastThree("scouting", {
+			tid: g.get("userTid"),
+		});
 
 		// Add rows one at a time, since we want to store full ratings history
 		for (let i = 0; i < diff; i++) {
-			player.addRatingsRow(p, scoutingRank);
+			player.addRatingsRow(p, scoutingLevel);
 
 			// Adjust season, since addRatingsRow always adds in current season
 			p.ratings.at(-1)!.season -= diff - i - 1;
@@ -478,12 +469,11 @@ const processScheduledEvents = async (
 	phase: number,
 	conditions: Conditions,
 ) => {
-	if (g.get("repeatSeason")) {
+	if (g.get("repeatSeason")?.type === "playersAndRosters") {
 		return;
 	}
 
 	const scheduledEvents = await idb.cache.scheduledEvents.getAll();
-	const processed: typeof scheduledEvents = [];
 	const eventLogTexts: string[] = [];
 
 	const realTeamInfo = (await idb.meta.get("attributes", "realTeamInfo")) as
@@ -529,8 +519,11 @@ const processScheduledEvents = async (
 		}
 
 		await idb.cache.scheduledEvents.delete(scheduledEvent.id);
+	}
 
-		processed.push(scheduledEvent);
+	if (scheduledEvents.length > 0) {
+		// Non-default scheduled events (or default plus bulk delete) could leave a team orphanied in a division or conference that no longer exists
+		await team.ensureValidDivsConfs();
 	}
 
 	if (eventLogTexts.length > 0) {

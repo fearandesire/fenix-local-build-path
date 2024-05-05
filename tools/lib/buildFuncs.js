@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import fse from "fs-extra";
 import * as htmlmin from "html-minifier-terser";
-import sass from "sass";
+import * as sass from "sass";
 import path from "node:path";
 import { PurgeCSS } from "purgecss";
 import replace from "replace";
@@ -65,7 +65,7 @@ const buildCSS = async (watch /*: boolean*/ = false) => {
 						/^dashboard-top-link-other/,
 					],
 				},
-		  });
+			});
 
 	for (let i = 0; i < filenames.length; i++) {
 		const filename = filenames[i];
@@ -88,7 +88,7 @@ const buildCSS = async (watch /*: boolean*/ = false) => {
 				minify: true,
 				sourceMap: false,
 				targets: lightningCSS.browserslistToTargets(
-					browserslist("Chrome >= 55, Firefox >= 78, Safari >= 12"),
+					browserslist("Chrome >= 75, Firefox >= 78, Safari >= 12.1"),
 				),
 			});
 
@@ -321,6 +321,9 @@ const setTimestamps = (rev /*: string*/, watch /*: boolean*/ = false) => {
 	// Quantcast Choice. Consent Manager Tag v2.0 (for TCF 2.0)
 	const bannerAdsCode = `<script type="text/javascript" async=true>
 (function() {
+  if (!window.enableLogging) {
+	return;
+  }
   var host = '${bySport({
 		basketball: "basketball-gm.com",
 		football: "football-gm.com",
@@ -328,8 +331,8 @@ const setTimestamps = (rev /*: string*/, watch /*: boolean*/ = false) => {
 	})}';
   var element = document.createElement('script');
   var firstScript = document.getElementsByTagName('script')[0];
-  var url = 'https://cmp.quantcast.com'
-    .concat('/choice/', 'M1Q1fpfqa7Vk4', '/', host, '/choice.js');
+  var url = 'https://cmp.inmobi.com'
+    .concat('/choice/', 'M1Q1fpfqa7Vk4', '/', host, '/choice.js?tag_version=V3');
   var uspTries = 0;
   var uspTriesLimit = 3;
   element.async = true;
@@ -391,7 +394,7 @@ const setTimestamps = (rev /*: string*/, watch /*: boolean*/ = false) => {
         }
       } else {
         if(args[0] === 'init' && typeof args[3] === 'object') {
-          args[3] = { ...args[3], tag_version: 'V2' };
+          args[3] = Object.assign(args[3], { tag_version: 'V3' });
         }
         queue.push(args);
       }
@@ -499,7 +502,6 @@ if (window.enableLogging) {
 			default: "zengm-com",
 		},
 	)}";e+=freestar.debug?"/qa/pubfig.min.js":"/pubfig.min.js",d.async=!0,d.src=e,c.parentNode.insertBefore(d,c)}(window,document);
-  freestar.initCallback = function () { freestar.newAdSlots(freestar.config.enabled_slots); }
 }
 </script>`;
 

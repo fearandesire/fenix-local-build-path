@@ -1,11 +1,11 @@
 import { unwrap } from "idb";
-import orderBy from "lodash-es/orderBy";
 import {
 	DEFAULT_PLAY_THROUGH_INJURIES,
+	DEFAULT_TEAM_COLORS,
 	DIFFICULTY,
 	gameAttributesArrayToObject,
 	isSport,
-	MAX_SUPPORTED_LEAGUE_VERSION,
+	LEAGUE_DATABASE_VERSION,
 	PHASE,
 	PLAYER,
 	unwrapGameAttribute,
@@ -38,8 +38,13 @@ import type {
 	HeadToHead,
 	DraftPick,
 	SeasonLeaders,
+	GameAttributeWithHistory,
+	GameAttributesLeagueWithHistory,
+	SavedTrade,
 } from "../../common/types";
 import getInitialNumGamesConfDivSettings from "../core/season/getInitialNumGamesConfDivSettings";
+import { amountToLevel } from "../../common/budgetLevels";
+import { orderBy } from "../../common/utils";
 
 export interface LeagueDB extends DBSchema {
 	allStars: {
@@ -119,6 +124,10 @@ export interface LeagueDB extends DBSchema {
 		key: number;
 		value: ReleasedPlayer;
 		autoIncrementKeyPath: "rid";
+	};
+	savedTrades: {
+		key: string;
+		value: SavedTrade;
 	};
 	schedule: {
 		key: number;
@@ -210,7 +219,11 @@ const upgrade29 = (tx: IDBTransaction) => {
 				event2: any,
 			) => {
 				// Index brings them back maybe out of order
-				p.stats = orderBy(event2.target.result, ["season", "playoffs", "psid"]);
+				p.stats = orderBy(event2.target.result as any[], [
+					"season",
+					"playoffs",
+					"psid",
+				]);
 				cursor.update(p);
 				cursor.continue();
 			};
@@ -525,6 +538,10 @@ const create = (db: IDBPDatabase<LeagueDB>) => {
 	});
 	scheduledEventsStore.createIndex("season", "season", {
 		unique: false,
+	});
+
+	db.createObjectStore("savedTrades", {
+		keyPath: "hash",
 	});
 };
 
@@ -896,7 +913,7 @@ const migrate = async ({
 					) {
 						t.colors = teamsDefault[t.tid].colors;
 					} else {
-						t.colors = ["#000000", "#cccccc", "#ffffff"];
+						t.colors = DEFAULT_TEAM_COLORS;
 					}
 
 					return t;
@@ -1239,12 +1256,197 @@ const migrate = async ({
 			value: challengeThanosMode?.value ? 20 : 0,
 		});
 	}
+
+	if (oldVersion <= 54) {
+		type OldBudgetItem = {
+			amount: number;
+			rank: number;
+		};
+
+		const store = transaction.objectStore("gameAttributes");
+		const salaryCap: number =
+			(await store.get("salaryCap"))?.value ?? defaultGameAttributes.salaryCap;
+
+		const budgetsByTid: Record<number, Team["budget"]> = {};
+
+		await iterate(transaction.objectStore("teams"), undefined, undefined, t => {
+			// Compute equivalent levels for the budget values
+			for (const key of helpers.keys(t.budget)) {
+				const value = t.budget[key] as unknown as OldBudgetItem;
+				if (typeof value !== "number") {
+					if (key === "ticketPrice") {
+						t.budget[key] = value.amount;
+					} else {
+						t.budget[key] = amountToLevel(value.amount, salaryCap);
+					}
+				}
+			}
+
+			t.initialBudget = {
+				coaching: t.budget.coaching,
+				facilities: t.budget.facilities,
+				health: t.budget.health,
+				scouting: t.budget.scouting,
+			};
+
+			budgetsByTid[t.tid] = t.budget;
+
+			return t;
+		});
+
+		await iterate(
+			transaction.objectStore("teamSeasons"),
+			undefined,
+			undefined,
+			ts => {
+				if (ts.tied === undefined) {
+					ts.tied = 0;
+				}
+				if (ts.otl === undefined) {
+					ts.otl = 0;
+				}
+				const gp = helpers.getTeamSeasonGp(ts);
+				if (ts.gpHome === undefined) {
+					ts.gpHome = Math.round(gp / 2);
+				}
+
+				// Move the amount to root, no more storing rank
+				for (const key of helpers.keys(ts.revenues)) {
+					const value = ts.revenues[key] as unknown as OldBudgetItem;
+					if (typeof value !== "number") {
+						ts.revenues[key] = value.amount;
+					}
+				}
+				for (const key of helpers.keys(ts.expenses)) {
+					const value = ts.expenses[key] as unknown as OldBudgetItem;
+					if (typeof value !== "number") {
+						ts.expenses[key] = value.amount;
+					}
+				}
+
+				// Compute historical expense levels, assuming budget was the same as it is now. In theory could come up wtih a better estimate from expenses, but historical salary cap data is not stored so it wouldn't be perfect, and also who cares
+				const expenseLevelsKeys = [
+					"coaching",
+					"facilities",
+					"health",
+					"scouting",
+				] as const;
+				ts.expenseLevels = {} as any;
+				for (const key of expenseLevelsKeys) {
+					ts.expenseLevels[key] = gp * budgetsByTid[ts.tid][key];
+				}
+
+				return ts;
+			},
+		);
+	}
+
+	// Bug here! But leave so upgrade below works
+	if (oldVersion <= 55) {
+		const store = transaction.objectStore("gameAttributes");
+		const repeatSeason = await store.get("repeatSeason");
+
+		if (repeatSeason) {
+			await store.put({
+				key: "repeatSeason",
+				value: {
+					type: "playersAndRosters",
+					...repeatSeason,
+				},
+			});
+		}
+	}
+
+	// Fix old broken upgrade
+	if (oldVersion <= 56) {
+		const store = transaction.objectStore("gameAttributes");
+		const repeatSeason = (await store.get("repeatSeason"))?.value;
+
+		if (repeatSeason && repeatSeason.type === "playersAndRosters") {
+			if (repeatSeason.value === undefined) {
+				await store.put({
+					key: "repeatSeason",
+					value: undefined,
+				});
+			} else {
+				await store.put({
+					key: "repeatSeason",
+					value: {
+						type: "playersAndRosters",
+						...repeatSeason.value,
+					},
+				});
+			}
+		}
+	}
+
+	if (oldVersion <= 57) {
+		const store = transaction.objectStore("gameAttributes");
+		const ties = (await store.get("ties"))?.value as
+			| boolean
+			| GameAttributeWithHistory<boolean>
+			| undefined;
+
+		if (ties !== undefined) {
+			let maxOvertimes: GameAttributesLeagueWithHistory["maxOvertimes"];
+
+			if (ties === true || ties === false) {
+				maxOvertimes = [
+					{
+						start: -Infinity,
+						value: ties ? 1 : null,
+					},
+				];
+			} else {
+				maxOvertimes = ties.map(row => {
+					return {
+						start: row.start,
+						value: row.value ? 1 : null,
+					};
+				});
+			}
+
+			await store.put({
+				key: "maxOvertimes",
+				value: maxOvertimes,
+			});
+		}
+
+		await store.delete("ties");
+	}
+
+	if (oldVersion <= 58) {
+		db.createObjectStore("savedTrades", {
+			keyPath: "hash",
+		});
+	}
+
+	if (oldVersion <= 59) {
+		await iterate(
+			transaction.objectStore("playerFeats"),
+			undefined,
+			undefined,
+			feat => {
+				const pts = feat.score.split("-").map(x => parseInt(x));
+				let diff = -Infinity;
+				if (!Number.isNaN(pts[0]) && !Number.isNaN(pts[1])) {
+					diff = pts[0] - pts[1];
+				}
+
+				feat.result = diff === 0 ? "T" : (feat as any).won ? "W" : "L";
+
+				delete (feat as any).won;
+
+				return feat;
+			},
+		);
+	}
 };
 
 const connectLeague = (lid: number) =>
 	connectIndexedDB<LeagueDB>({
 		name: `league${lid}`,
-		version: MAX_SUPPORTED_LEAGUE_VERSION,
+		version: LEAGUE_DATABASE_VERSION,
 		lid,
 		create,
 		migrate,

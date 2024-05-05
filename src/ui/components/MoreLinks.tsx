@@ -50,7 +50,7 @@ const MoreLinks = (
 		  }
 		| {
 				type: "leaders";
-				playoffs: "playoffs" | "regularSeason";
+				playoffs: "playoffs" | "regularSeason" | "combined";
 				season: number | "career" | "all";
 				statType: PlayerStatType;
 		  }
@@ -219,7 +219,7 @@ const MoreLinks = (
 						name: "Edit Awards",
 						className: "god-mode",
 					},
-			  ]
+				]
 			: [];
 	} else if (props.type === "playerRatings") {
 		const { season } = props;
@@ -337,7 +337,18 @@ const MoreLinks = (
 				name: "Progressive Leaders",
 			},
 			{
-				url: ["player_stats", "all", season, statType, playoffs],
+				url: [
+					"player_stats",
+					"all",
+					season,
+					bySport({
+						baseball: "batting",
+						football: "passing",
+						basketball: statType,
+						hockey: "skater",
+					}),
+					playoffs,
+				],
 				name: "Player Stats",
 			},
 		];

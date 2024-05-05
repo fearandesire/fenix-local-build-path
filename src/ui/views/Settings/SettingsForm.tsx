@@ -1,8 +1,8 @@
 import classNames from "classnames";
 import { useState, type FormEvent, useEffect } from "react";
-import { groupBy } from "../../../common/groupBy";
+import { groupBy } from "../../../common/utils";
 import { ActionButton, StickyBottomButtons } from "../../components";
-import { confirm, localActions, logEvent } from "../../util";
+import { confirm, localActions, logEvent, helpers } from "../../util";
 import { settings } from "./settings";
 import type { Key, Values } from "./types";
 import type { Settings } from "../../../worker/views/settings";
@@ -14,6 +14,7 @@ import type {
 import SettingsFormOptions from "./SettingsFormOptions";
 import categories from "./categories";
 import useSettingsFormState from "./useSettingsFormState";
+import getSearchVal from "../../components/DataTable/getSearchVal";
 
 export const encodeDecodeFunctions = {
 	bool: {
@@ -24,7 +25,7 @@ export const encodeDecodeFunctions = {
 	float: {
 		stringify: (value: number) => String(value),
 		parse: (value: string) => {
-			const parsed = parseFloat(value);
+			const parsed = helpers.localeParseFloat(value);
 			if (Number.isNaN(parsed)) {
 				throw new Error(`"${value}" is not a valid number`);
 			}
@@ -34,7 +35,7 @@ export const encodeDecodeFunctions = {
 	float1000: {
 		stringify: (value: number) => String(value / 1000),
 		parse: (value: string) => {
-			const parsed = parseFloat(value) * 1000;
+			const parsed = helpers.localeParseFloat(value) * 1000;
 			if (Number.isNaN(parsed)) {
 				throw new Error(`"${value}" is not a valid number`);
 			}
@@ -48,7 +49,7 @@ export const encodeDecodeFunctions = {
 				return null;
 			}
 
-			const parsed = parseFloat(value);
+			const parsed = helpers.localeParseFloat(value);
 			if (Number.isNaN(parsed)) {
 				throw new Error(`"${value}" is not a valid number`);
 			}
@@ -87,7 +88,7 @@ export const encodeDecodeFunctions = {
 	rangePercent: {
 		stringify: (value: number) => String(value),
 		parse: (value: string) => {
-			const parsed = parseFloat(value);
+			const parsed = helpers.localeParseFloat(value);
 			if (Number.isNaN(parsed)) {
 				throw new Error(`"${value}" is not a valid number`);
 			}
@@ -104,7 +105,7 @@ export const encodeDecodeFunctions = {
 		},
 		parse: (value: string) => {
 			const parts = JSON.parse(value);
-			const numberPart = parseFloat(parts[1]);
+			const numberPart = helpers.localeParseFloat(parts[1]);
 			if (Number.isNaN(numberPart)) {
 				throw new Error(`"${numberPart}" is not a valid number`);
 			}
@@ -311,19 +312,50 @@ const SettingsForm = ({
 		}
 	};
 
+	const [filterText, setFilterText] = useState("");
+
 	// Filter out the new league only ones when appropriate
-	const filteredSettings = settings.filter(setting => {
+	let filteredSettings = settings.filter(setting => {
 		return (
 			(!settingsShown || settingsShown.includes(setting.key)) &&
 			(!setting.showOnlyIf ||
 				setting.showOnlyIf({
-					defaultNewLeagueSettings,
 					hasPlayers,
 					newLeague,
 					realPlayers,
 				}))
 		);
 	});
+
+	// Ignore all-whitespace filterText
+	if (filterText !== "" && /\S/.test(filterText)) {
+		const words = filterText
+			.split(" ")
+			.map(word => word.trim().toLowerCase())
+			.filter(word => word !== "");
+
+		filteredSettings = filteredSettings.filter(setting => {
+			const category = setting.category.toLowerCase();
+			const name = setting.name.toLowerCase();
+
+			// getSearchVal is just to look inside React components
+			const description = setting.description
+				? getSearchVal(setting.description)
+				: "";
+			const descriptionLong = setting.descriptionLong
+				? getSearchVal(setting.descriptionLong)
+				: "";
+
+			return words.every(word => {
+				return (
+					category.includes(word) ||
+					name.includes(word) ||
+					description.includes(word) ||
+					descriptionLong.includes(word)
+				);
+			});
+		});
+	}
 
 	const [submitting, setSubmitting] = useState(false);
 
@@ -465,49 +497,64 @@ const SettingsForm = ({
 				/>
 
 				<StickyBottomButtons isInsideModal={isInsideModal}>
-					{!hideGodModeToggle ? (
-						<div className="btn-group">
-							<button
-								className={classNames(
-									"btn",
-									godMode ? "btn-secondary" : "btn-god-mode",
-								)}
-								onClick={handleGodModeToggle}
-								type="button"
-								disabled={submitting}
-							>
-								{godMode ? "Disable God Mode" : "Enable God Mode"}
-							</button>
-							{showGodModeSettingsButton ? (
-								<GodModeSettingsButton
-									className="d-none d-sm-block"
-									godMode={godMode}
+					<div className="d-flex justify-content-between w-100">
+						{!hideGodModeToggle ? (
+							<div className="btn-group">
+								<button
+									className={classNames(
+										"btn text-nowrap",
+										godMode ? "btn-secondary" : "btn-god-mode",
+									)}
+									onClick={handleGodModeToggle}
+									type="button"
 									disabled={submitting}
-									onClick={toggleGodModeSettings}
 								>
-									{showGodModeSettings ? "Hide" : "Show"} God Mode settings
-								</GodModeSettingsButton>
-							) : null}
-						</div>
-					) : null}
-					<div className="btn-group ms-auto">
-						{onCancel ? (
-							<button
-								className="btn btn-secondary"
-								type="button"
-								disabled={submitting}
-								onClick={onCancel}
-							>
-								Cancel
-							</button>
+									{godMode ? "Disable God Mode" : "Enable God Mode"}
+								</button>
+								{showGodModeSettingsButton ? (
+									<GodModeSettingsButton
+										className="d-none d-sm-block text-nowrap"
+										godMode={godMode}
+										disabled={submitting}
+										onClick={toggleGodModeSettings}
+									>
+										{showGodModeSettings ? "Hide" : "Show"} God Mode settings
+									</GodModeSettingsButton>
+								) : null}
+							</div>
 						) : null}
-						<ActionButton
-							type="submit"
-							disabled={submitting}
-							processing={!!newLeague && submitting}
-						>
-							{saveText}
-						</ActionButton>
+
+						<input
+							type="text"
+							className="form-control mx-3"
+							placeholder="Filter settings..."
+							style={{ maxWidth: 300 }}
+							value={filterText}
+							onChange={event => {
+								setFilterText(event.target.value);
+							}}
+						/>
+
+						<div className="btn-group">
+							{onCancel ? (
+								<button
+									className="btn btn-secondary text-nowrap"
+									type="button"
+									disabled={submitting}
+									onClick={onCancel}
+								>
+									Cancel
+								</button>
+							) : null}
+							<ActionButton
+								className="text-nowrap"
+								type="submit"
+								disabled={submitting}
+								processing={!!newLeague && submitting}
+							>
+								{saveText}
+							</ActionButton>
+						</div>
 					</div>
 				</StickyBottomButtons>
 			</form>

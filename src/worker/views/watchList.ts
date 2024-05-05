@@ -11,6 +11,7 @@ const updatePlayers = async (
 	state: any,
 ) => {
 	if (
+		updateEvents.includes("firstRun") ||
 		updateEvents.includes("watchList") ||
 		updateEvents.includes("gameSim") ||
 		updateEvents.includes("playerMovement") ||
@@ -69,7 +70,8 @@ const updatePlayers = async (
 				season: g.get("season"),
 				statType: inputs.statType,
 				playoffs: inputs.playoffs === "playoffs",
-				regularSeason: inputs.playoffs !== "playoffs",
+				regularSeason: inputs.playoffs === "regularSeason",
+				combined: inputs.playoffs === "combined",
 				fuzz: true,
 				showNoStats: true,
 				showRookies: true,

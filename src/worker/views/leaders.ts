@@ -15,8 +15,7 @@ import type {
 	UpdateEvents,
 	ViewInput,
 } from "../../common/types";
-import { groupByUnique } from "../../common/groupBy";
-import range from "lodash-es/range";
+import { groupByUnique, range } from "../../common/utils";
 import addFirstNameShort from "../util/addFirstNameShort";
 import { season } from "../core";
 
@@ -264,7 +263,7 @@ export const getCategoriesAndStats = (onlyStat?: string) => {
 				stat: "recYds",
 			},
 			{
-				stat: "recYdsPerAtt",
+				stat: "recYdsPerRec",
 			},
 			{
 				stat: "recTD",
@@ -419,33 +418,53 @@ export class GamesPlayedCache {
 				continue;
 			}
 
-			const teamSeasons = await idb.getCopies.teamSeasons(
-				{
-					season,
-				},
-				"noCopyCache",
-			);
+			// In the playoffs, if we're in the first round or later (not the play-in), set the number of games to the minimum number of games to win a first round series (or the number of games so far). That way you won't see someone who played like 1 game in the play-in tournament leading in points per game after the entire playoffs.
+			let minGpPlayoffs = 0;
+			if (playoffs) {
+				const playoffSeries = await idb.getCopy.playoffSeries(
+					{ season },
+					"noCopyCache",
+				);
+
+				// This only matters if there is a play-in tournament
+				if (playoffSeries?.playIns) {
+					// Find any non-bye first round series and see how many games have been played so far
+					for (const series of playoffSeries.series[0]) {
+						if (series.away) {
+							// Number of games played so far - can't require more than this!
+							const numGamesFirstRoundSoFar = series.home.won + series.away.won;
+
+							// Number of games in a first round sweep
+							const numGamesMinAfterFirstRound = helpers.numGamesToWinSeries(
+								g.get("numGamesPlayoffSeries", season)[0],
+							);
+
+							minGpPlayoffs = Math.min(
+								numGamesFirstRoundSoFar,
+								numGamesMinAfterFirstRound,
+							);
+
+							// No need to look for more, since series schedules are always in sync (all series play on same days)
+							break;
+						}
+					}
+				}
+			}
+
+			const teams = await idb.getCopies.teamsPlus({
+				attrs: ["tid"],
+				stats: ["gp"],
+				season,
+				playoffs,
+				regularSeason: !playoffs,
+			});
 
 			const cache: Record<number, number> = {};
-			for (const teamSeason of teamSeasons) {
-				const gpRegularSeason =
-					teamSeason.won +
-					teamSeason.lost +
-					(teamSeason.tied ?? 0) +
-					(teamSeason.otl ?? 0);
+			for (const t of teams) {
 				if (playoffs) {
-					if (teamSeason.gp < gpRegularSeason) {
-						cache[teamSeason.tid] = 0;
-					} else {
-						cache[teamSeason.tid] = teamSeason.gp - gpRegularSeason;
-					}
+					cache[t.tid] = Math.max(minGpPlayoffs, t.stats.gp);
 				} else {
-					// Don't count playoff games
-					if (teamSeason.gp > gpRegularSeason) {
-						cache[teamSeason.tid] = gpRegularSeason;
-					} else {
-						cache[teamSeason.tid] = teamSeason.gp;
-					}
+					cache[t.tid] = t.stats.gp;
 				}
 			}
 
@@ -457,7 +476,21 @@ export class GamesPlayedCache {
 		}
 	}
 
-	get(season: number, playoffs: boolean, tid: number, career: boolean) {
+	get(
+		season: number,
+		type: "regularSeason" | "playoffs" | "combined",
+		tid: number,
+		career: boolean,
+	): number | null {
+		if (type === "combined") {
+			return (
+				(this.get(season, "regularSeason", tid, career) ?? 0) +
+				(this.get(season, "playoffs", tid, career) ?? 0)
+			);
+		}
+
+		const playoffs = type === "playoffs";
+
 		if (career) {
 			if (playoffs) {
 				// Arbitrary - two full playoffs runs
@@ -558,7 +591,7 @@ export const playerMeetsCategoryRequirements = ({
 	gamesPlayedCache,
 	p,
 	playerStats,
-	playoffs,
+	seasonType,
 	season,
 	statType,
 }: {
@@ -567,7 +600,7 @@ export const playerMeetsCategoryRequirements = ({
 	gamesPlayedCache: GamesPlayedCache;
 	p: PlayerFiltered;
 	playerStats: Record<string, any>;
-	playoffs: boolean;
+	seasonType: "regularSeason" | "playoffs" | "combined";
 	season: number;
 	statType: PlayerStatType;
 }) => {
@@ -581,7 +614,7 @@ export const playerMeetsCategoryRequirements = ({
 
 	// To handle changes in number of games, playing time, etc
 	const factor =
-		(g.get("numGames") / defaultGameAttributes.numGames) *
+		(g.get("numGames") / defaultGameAttributes.numGames[0].value) *
 		numPlayersOnCourtFactor *
 		helpers.quarterLengthFactor();
 
@@ -606,7 +639,7 @@ export const playerMeetsCategoryRequirements = ({
 
 			const gpTeam = gamesPlayedCache.get(
 				season,
-				playoffs,
+				seasonType,
 				playerStats.tid,
 				career,
 			);
@@ -619,7 +652,10 @@ export const playerMeetsCategoryRequirements = ({
 
 			// Special case GP
 			if (minStat === "gp") {
-				if (playerValue / gpTeam >= minValue / defaultGameAttributes.numGames) {
+				if (
+					playerValue / gpTeam >=
+					minValue / defaultGameAttributes.numGames[0].value
+				) {
 					pass = true;
 					break; // If one is true, don't need to check the others
 				}
@@ -692,6 +728,7 @@ const updateLeaders = async (
 ) => {
 	// Respond to watchList in case players are listed twice in different categories
 	if (
+		updateEvents.includes("firstRun") ||
 		updateEvents.includes("watchList") ||
 		(inputs.season === g.get("season") && updateEvents.includes("gameSim")) ||
 		inputs.season !== state.season ||
@@ -699,7 +736,6 @@ const updateLeaders = async (
 		inputs.statType !== state.statType
 	) {
 		const { categories, stats } = getCategoriesAndStats();
-		const playoffs = inputs.playoffs === "playoffs";
 
 		const outputCategories = categories.map(category => ({
 			titleOverride: category.titleOverride,
@@ -718,7 +754,16 @@ const updateLeaders = async (
 		} else {
 			seasons = [inputs.season];
 		}
-		await gamesPlayedCache.loadSeasons(seasons, playoffs);
+
+		if (inputs.playoffs === "combined") {
+			await gamesPlayedCache.loadSeasons(seasons, false);
+			await gamesPlayedCache.loadSeasons(seasons, true);
+		} else {
+			await gamesPlayedCache.loadSeasons(
+				seasons,
+				inputs.playoffs === "playoffs",
+			);
+		}
 
 		await iterateAllPlayers(inputs.season, async (pRaw, season) => {
 			const p = await idb.getCopy.playersPlus(pRaw, {
@@ -735,8 +780,9 @@ const updateLeaders = async (
 				ratings: ["skills", "pos"],
 				stats: ["abbrev", "tid", ...stats],
 				season: season === "career" ? undefined : season,
-				playoffs,
-				regularSeason: !playoffs,
+				playoffs: inputs.playoffs === "playoffs",
+				regularSeason: inputs.playoffs === "regularSeason",
+				combined: inputs.playoffs === "combined",
 				mergeStats: "totOnly",
 				statType: inputs.statType,
 			});
@@ -754,8 +800,10 @@ const updateLeaders = async (
 
 			let playerStats;
 			if (season === "career") {
-				if (playoffs) {
+				if (inputs.playoffs === "playoffs") {
 					playerStats = p.careerStatsPlayoffs;
+				} else if (inputs.playoffs === "combined") {
+					playerStats = p.careerStatsCombined;
 				} else {
 					playerStats = p.careerStats;
 				}
@@ -785,7 +833,7 @@ const updateLeaders = async (
 					gamesPlayedCache,
 					p,
 					playerStats,
-					playoffs,
+					seasonType: inputs.playoffs,
 					season: season === "career" ? g.get("season") : season,
 					statType: inputs.statType,
 				});

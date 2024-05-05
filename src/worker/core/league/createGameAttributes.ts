@@ -2,7 +2,6 @@ import { season } from "..";
 import {
 	DIFFICULTY,
 	gameAttributeHasHistory,
-	isSport,
 	PHASE,
 	unwrapGameAttribute,
 	WEBSITE_ROOT,
@@ -258,7 +257,7 @@ const createGameAttributes = async (
 	{
 		const info = getInitialNumGamesConfDivSettings(teamInfos, {
 			divs: unwrapGameAttribute(gameAttributes, "divs"),
-			numGames: gameAttributes.numGames,
+			numGames: unwrapGameAttribute(gameAttributes, "numGames"),
 			numGamesConf: gameAttributes.numGamesConf,
 			numGamesDiv: gameAttributes.numGamesDiv,
 		});
@@ -284,24 +283,7 @@ const createGameAttributes = async (
 		}
 	}
 
-	if ((gameAttributes as any).hardCap !== undefined) {
-		gameAttributes.salaryCapType = (gameAttributes as any).hardCap
-			? "hard"
-			: "soft";
-		delete (gameAttributes as any).hardCap;
-	}
-
-	if (!isSport("basketball") && (version === undefined || version <= 51)) {
-		if (gameAttributes.pace === 100) {
-			gameAttributes.pace = 1;
-		}
-	}
-
-	if (typeof gameAttributes.challengeThanosMode === "boolean") {
-		gameAttributes.challengeThanosMode = gameAttributes.challengeThanosMode
-			? 20
-			: 0;
-	}
+	// For simple upgrades, add stuff to simpleGameAttribtuesUpgrade!
 
 	return gameAttributes;
 };

@@ -15,7 +15,7 @@ import PlayerBioInfoSortButton from "./PlayerBioInfoSortButton";
 import { IMPORT_FILE_STYLE } from "./RowsEditor";
 import { CountryFlag } from "../../components";
 import Modal from "../../components/Modal";
-import orderBy from "lodash-es/orderBy";
+import { orderBy } from "../../../common/utils";
 
 export const smallColStyle = {
 	marginLeft: 10,
@@ -412,7 +412,7 @@ export const CountriesEditor = ({
 											type="text"
 											className={classNames("form-control", {
 												"is-invalid": isInvalidNumber(
-													parseFloat(country.frequency),
+													helpers.localeParseFloat(country.frequency),
 												),
 											})}
 											value={country.frequency}

@@ -1,10 +1,10 @@
-import orderBy from "lodash-es/orderBy";
 import type { AllStars, Conditions, DunkAttempt } from "../../../common/types";
 import { dunkInfos, getValidMoves } from "../../../common/dunkContest";
 import { idb } from "../../db";
 import { g, helpers, random } from "../../util";
 import { saveAwardsByPlayer } from "../season/awards";
 import { getNextRoundType } from "./contest";
+import { orderBy } from "../../../common/utils";
 
 export const HIGHEST_POSSIBLE_SCORE = 50;
 export const LOWEST_POSSIBLE_SCORE = 5;
@@ -174,7 +174,11 @@ const makeDunkHarder = (dunk: DunkAttempt, minScoreNeeded: number) => {
 			}
 
 			// If there are parts with higher difficulty, move up to the next highest one
-			const candidate = orderBy(candidates, "difficulty", "asc")[0];
+			const candidate = orderBy(
+				candidates,
+				candidate => candidate[1].difficulty,
+				"asc",
+			)[0];
 			newDunk[part] = candidate[0];
 
 			if (getDunkScoreRaw(newDunk) > minScoreNeeded) {

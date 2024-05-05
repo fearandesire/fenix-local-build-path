@@ -38,35 +38,71 @@ describe("common/helpers", () => {
 		});
 
 		test("append a string, if supplied", () => {
-			assert.strictEqual(
-				helpers.formatCurrency(64363.764376, "Q"),
-				"$64363.76Q",
-			);
-			assert.strictEqual(
-				helpers.formatCurrency(0.794, "whatever"),
-				"$0.79whatever",
-			);
+			assert.strictEqual(helpers.formatCurrency(64.764376, "M"), "$64.76M");
 		});
 
 		test("round to any precision", () => {
 			assert.strictEqual(
-				helpers.formatCurrency(64363.764376, "Q", 5),
-				"$64363.76438Q",
+				helpers.formatCurrency(64363.764376, "M", 5),
+				"$64.36376B",
 			);
-			assert.strictEqual(
-				helpers.formatCurrency(0.794, "whatever", 0),
-				"$1whatever",
-			);
+			assert.strictEqual(helpers.formatCurrency(0.794123, "M", 0), "$794k");
 		});
 
 		test("truncate trailing 0s", () => {
+			assert.strictEqual(helpers.formatCurrency(64.99, "M", 2), "$64.99M");
+			assert.strictEqual(helpers.formatCurrency(64.9, "M", 2), "$64.9M");
+			assert.strictEqual(helpers.formatCurrency(64.0, "M", 2), "$64M");
+			assert.strictEqual(helpers.formatCurrency(64, "M", 2), "$64M");
+		});
+
+		test("large numbers and scientific notation", () => {
+			assert.strictEqual(helpers.formatCurrency(64.363, "", 2), "$64.36");
+			assert.strictEqual(helpers.formatCurrency(64000, "", 2), "$64k");
+			assert.strictEqual(helpers.formatCurrency(6400000, "", 2), "$6.4M");
+			assert.strictEqual(helpers.formatCurrency(6400000000, "", 2), "$6.4B");
+			assert.strictEqual(helpers.formatCurrency(6400000000000, "", 2), "$6.4T");
 			assert.strictEqual(
-				helpers.formatCurrency(64363.99, "Q", 2),
-				"$64363.99Q",
+				helpers.formatCurrency(6400000000000000, "", 2),
+				"$6.4Q",
 			);
-			assert.strictEqual(helpers.formatCurrency(64363.9, "Q", 2), "$64363.9Q");
-			assert.strictEqual(helpers.formatCurrency(64363.0, "Q", 2), "$64363Q");
-			assert.strictEqual(helpers.formatCurrency(64363, "Q", 2), "$64363Q");
+			assert.strictEqual(
+				helpers.formatCurrency(6400000000000000000, "", 2),
+				"$6.4e18",
+			);
+			assert.strictEqual(
+				helpers.formatCurrency(64000000000000000000, "", 2),
+				"$6.4e19",
+			);
+		});
+
+		test("large numbers and scientific notation, in millions", () => {
+			assert.strictEqual(helpers.formatCurrency(64363, "M", 2), "$64.36B");
+			assert.strictEqual(helpers.formatCurrency(64363000, "M", 2), "$64.36T");
+			assert.strictEqual(
+				helpers.formatCurrency(64363000000, "M", 2),
+				"$64.36Q",
+			);
+			assert.strictEqual(
+				helpers.formatCurrency(643630000000, "M", 2),
+				"$643.63Q",
+			);
+			assert.strictEqual(
+				helpers.formatCurrency(6436300000000, "M", 2),
+				"$6.44e18",
+			);
+			assert.strictEqual(
+				helpers.formatCurrency(64363000000000, "M", 2),
+				"$6.44e19",
+			);
+		});
+
+		test("number under 1 with no unit", () => {
+			assert.strictEqual(helpers.formatCurrency(0.5, ""), "$0.50");
+		});
+
+		test("$1000M", () => {
+			assert.strictEqual(helpers.formatCurrency(1000, "M"), "$1B");
 		});
 	});
 
@@ -88,6 +124,75 @@ describe("common/helpers", () => {
 			assert.deepStrictEqual(
 				helpers.getPopRanks(makeObj([5, 5, 10, 10, 10, 1, 7])),
 				[5.5, 5.5, 2, 2, 2, 7, 4],
+			);
+		});
+	});
+
+	describe("getRelativeType", () => {
+		it("should return the correct relative type for a male gender", () => {
+			assert.strictEqual(helpers.getRelativeType("male", "brother"), "Brother");
+			assert.strictEqual(helpers.getRelativeType("male", "son"), "Son");
+			assert.strictEqual(helpers.getRelativeType("male", "father"), "Father");
+			assert.strictEqual(
+				helpers.getRelativeType("male", "grandfather"),
+				"Grandfather",
+			);
+			assert.strictEqual(
+				helpers.getRelativeType("male", "grandson"),
+				"Grandson",
+			);
+			assert.strictEqual(helpers.getRelativeType("male", "nephew"), "Nephew");
+			assert.strictEqual(helpers.getRelativeType("male", "uncle"), "Uncle");
+		});
+
+		it("should return the correct relative type for a female gender", () => {
+			assert.strictEqual(
+				helpers.getRelativeType("female", "brother"),
+				"Sister",
+			);
+			assert.strictEqual(helpers.getRelativeType("female", "son"), "Daughter");
+			assert.strictEqual(helpers.getRelativeType("female", "father"), "Mother");
+			assert.strictEqual(
+				helpers.getRelativeType("female", "grandfather"),
+				"Grandmother",
+			);
+			assert.strictEqual(
+				helpers.getRelativeType("female", "grandson"),
+				"Granddaughter",
+			);
+			assert.strictEqual(helpers.getRelativeType("female", "nephew"), "Niece");
+			assert.strictEqual(helpers.getRelativeType("female", "uncle"), "Aunt");
+		});
+	});
+
+	describe("leagueUrlFactory", () => {
+		it("should construct a valid URL with components", () => {
+			const lid = 123;
+			const components = ["team", 45, "roster", undefined, "stats"];
+			const assertedUrl = "/l/123/team/45/roster/stats";
+			assert.strictEqual(
+				helpers.leagueUrlFactory(lid, components),
+				assertedUrl,
+			);
+		});
+
+		it("should construct a valid URL without undefined components", () => {
+			const lid = 456;
+			const components = ["players", undefined, "schedule", "results"];
+			const assertedUrl = "/l/456/players/schedule/results";
+			assert.strictEqual(
+				helpers.leagueUrlFactory(lid, components),
+				assertedUrl,
+			);
+		});
+
+		it("should construct a valid URL with only the league ID", () => {
+			const lid = 789;
+			const components: (number | string | undefined)[] = [];
+			const assertedUrl = "/l/789";
+			assert.strictEqual(
+				helpers.leagueUrlFactory(lid, components),
+				assertedUrl,
 			);
 		});
 	});

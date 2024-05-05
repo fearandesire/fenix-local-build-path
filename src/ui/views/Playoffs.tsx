@@ -2,9 +2,9 @@ import { PlayoffMatchup, ResponsiveTableWrapper } from "../components";
 import useTitleBar from "../hooks/useTitleBar";
 import type { View } from "../../common/types";
 import { helpers, toWorker } from "../util";
-import range from "lodash-es/range";
 import { useState } from "react";
 import classNames from "classnames";
+import { range } from "../../common/utils";
 
 type TeamToEdit = View<"playoffs">["teamsToEdit"][number];
 
@@ -74,9 +74,6 @@ const Playoffs = ({
 
 	let maxNumCols = 0;
 
-	const playInPlural = playIns && playIns.length > 1 ? "s" : "";
-	const playInPluralAlt = playIns && playIns.length > 1 ? "" : "s";
-
 	const editingInfo = actuallyEditing
 		? {
 				byConf: playoffsByConf,
@@ -103,7 +100,7 @@ const Playoffs = ({
 					);
 				},
 				teams: teamsEdited,
-		  }
+			}
 		: undefined;
 
 	return (
@@ -204,12 +201,15 @@ const Playoffs = ({
 				<>
 					<h2>Play-In Tournament</h2>
 					<p className="mb-2">
-						The winner{playInPlural} of the {playIns[0][0].home.seed}/
-						{playIns[0][0].away.seed} game{playInPlural} make{playInPluralAlt}{" "}
-						the playoffs. Then the loser{playInPlural} play{playInPluralAlt} the
-						winner{playInPlural} of the {playIns[0][1].home.seed}/
-						{playIns[0][1].away.seed} game{playInPlural} for the final playoffs
-						spot{playInPlural}.
+						The {helpers.plural("winner", playIns.length)} of the{" "}
+						{playIns[0][0].home.seed}/{playIns[0][0].away.seed}{" "}
+						{helpers.plural("game makes", playIns.length, "games make")} the{" "}
+						playoffs. Then the{" "}
+						{helpers.plural("loser plays", playIns.length, "losers play")} the{" "}
+						{helpers.plural("winner", playIns.length)} of the{" "}
+						{playIns[0][1].home.seed}/{playIns[0][1].away.seed}{" "}
+						{helpers.plural("game", playIns.length)} for the final playoffs{" "}
+						{helpers.plural("spot", playIns.length)}.
 					</p>
 					{[...playIns].reverse().map((playIn, i) => {
 						return (

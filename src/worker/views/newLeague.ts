@@ -67,6 +67,10 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"forceRetireAge",
 		),
+		forceRetireSeasons: unwrapGameAttribute(
+			defaultGameAttributes,
+			"forceRetireSeasons",
+		),
 		salaryCapType: unwrapGameAttribute(defaultGameAttributes, "salaryCapType"),
 		numGamesPlayoffSeries: unwrapGameAttribute(
 			defaultGameAttributes,
@@ -116,6 +120,10 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"twoPointAccuracyFactor",
 		),
+		ftAccuracyFactor: unwrapGameAttribute(
+			defaultGameAttributes,
+			"ftAccuracyFactor",
+		),
 		blockFactor: unwrapGameAttribute(defaultGameAttributes, "blockFactor"),
 		stealFactor: unwrapGameAttribute(defaultGameAttributes, "stealFactor"),
 		turnoverFactor: unwrapGameAttribute(
@@ -163,8 +171,22 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"realPlayerDeterminism",
 		),
-		repeatSeason: !!unwrapGameAttribute(defaultGameAttributes, "repeatSeason"),
-		ties: unwrapGameAttribute(defaultGameAttributes, "ties"),
+		repeatSeason:
+			unwrapGameAttribute(defaultGameAttributes, "repeatSeason")?.type ??
+			"disabled",
+		maxOvertimes: unwrapGameAttribute(defaultGameAttributes, "maxOvertimes"),
+		maxOvertimesPlayoffs: unwrapGameAttribute(
+			defaultGameAttributes,
+			"maxOvertimesPlayoffs",
+		),
+		shootoutRounds: unwrapGameAttribute(
+			defaultGameAttributes,
+			"shootoutRounds",
+		),
+		shootoutRoundsPlayoffs: unwrapGameAttribute(
+			defaultGameAttributes,
+			"shootoutRoundsPlayoffs",
+		),
 		otl: unwrapGameAttribute(defaultGameAttributes, "otl"),
 		spectator: unwrapGameAttribute(defaultGameAttributes, "spectator"),
 		elam: unwrapGameAttribute(defaultGameAttributes, "elam"),
@@ -351,6 +373,35 @@ export const getDefaultSettings = () => {
 		groupScheduleSeries: unwrapGameAttribute(
 			defaultGameAttributes,
 			"groupScheduleSeries",
+		),
+		autoExpandProb: unwrapGameAttribute(
+			defaultGameAttributes,
+			"autoExpandProb",
+		),
+		autoExpandNumTeams: unwrapGameAttribute(
+			defaultGameAttributes,
+			"autoExpandNumTeams",
+		),
+		autoExpandMaxNumTeams: unwrapGameAttribute(
+			defaultGameAttributes,
+			"autoExpandMaxNumTeams",
+		),
+		autoExpandGeo: unwrapGameAttribute(defaultGameAttributes, "autoExpandGeo"),
+		autoRelocateProb: unwrapGameAttribute(
+			defaultGameAttributes,
+			"autoRelocateProb",
+		),
+		autoRelocateGeo: unwrapGameAttribute(
+			defaultGameAttributes,
+			"autoRelocateGeo",
+		),
+		autoRelocateRealign: unwrapGameAttribute(
+			defaultGameAttributes,
+			"autoRelocateRealign",
+		),
+		autoRelocateRebrand: unwrapGameAttribute(
+			defaultGameAttributes,
+			"autoRelocateRebrand",
 		),
 
 		// This can be undefined, but if the setting is ever displayed to the user, it should default to "rookie"

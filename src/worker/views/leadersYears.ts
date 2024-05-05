@@ -1,8 +1,7 @@
 import { idb } from "../db";
 import { g } from "../util";
 import type { UpdateEvents, ViewInput } from "../../common/types";
-import { groupByUnique } from "../../common/groupBy";
-import range from "lodash-es/range";
+import { groupByUnique, range } from "../../common/utils";
 import {
 	GamesPlayedCache,
 	getCategoriesAndStats,
@@ -33,6 +32,7 @@ const updateLeadersYears = async (
 ) => {
 	// Respond to watchList in case players are listed twice in different categories
 	if (
+		updateEvents.includes("firstRun") ||
 		updateEvents.includes("watchList") ||
 		inputs.stat !== state.stat ||
 		inputs.playoffs !== state.playoffs ||
@@ -42,7 +42,6 @@ const updateLeadersYears = async (
 		const allStats = allCategories.map(cat => cat.stat);
 
 		const { categories, stats } = getCategoriesAndStats(inputs.stat);
-		const playoffs = inputs.playoffs === "playoffs";
 
 		const cat = categories[0];
 
@@ -51,14 +50,32 @@ const updateLeadersYears = async (
 		let allLeaders = seasons
 			.map(season => ({
 				season,
+				linkSeason: false,
 				leaders: [] as MyLeader[],
 			}))
 			.reverse();
 
+		for (const row of allLeaders) {
+			const awards = await idb.getCopy.awards({
+				season: row.season,
+			});
+			if (awards) {
+				row.linkSeason = true;
+			}
+		}
+
 		const leadersBySeason = groupByUnique(allLeaders, "season");
 
 		const gamesPlayedCache = new GamesPlayedCache();
-		await gamesPlayedCache.loadSeasons(seasons, playoffs);
+		if (inputs.playoffs === "combined") {
+			await gamesPlayedCache.loadSeasons(seasons, false);
+			await gamesPlayedCache.loadSeasons(seasons, true);
+		} else {
+			await gamesPlayedCache.loadSeasons(
+				seasons,
+				inputs.playoffs === "playoffs",
+			);
+		}
 
 		await iterateAllPlayers("all", async (pRaw, season) => {
 			if (typeof season !== "number") {
@@ -84,8 +101,9 @@ const updateLeadersYears = async (
 				ratings: ["skills", "pos"],
 				stats: ["abbrev", "tid", ...stats],
 				season,
-				playoffs,
-				regularSeason: !playoffs,
+				playoffs: inputs.playoffs === "playoffs",
+				regularSeason: inputs.playoffs === "regularSeason",
+				combined: inputs.playoffs === "combined",
 				mergeStats: "totOnly",
 				statType: inputs.statType,
 			});
@@ -111,7 +129,7 @@ const updateLeadersYears = async (
 				gamesPlayedCache,
 				p,
 				playerStats: p.stats,
-				playoffs,
+				seasonType: inputs.playoffs,
 				season,
 				statType: inputs.statType,
 			});

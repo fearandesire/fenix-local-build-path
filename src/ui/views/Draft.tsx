@@ -79,6 +79,7 @@ const Draft = ({
 	expansionDraft,
 	expansionDraftFilteredTeamsMessage,
 	fantasyDraft,
+	season,
 	spectator,
 	stats,
 	undrafted,
@@ -102,8 +103,8 @@ const Draft = ({
 		title: fantasyDraft
 			? "Fantasy Draft"
 			: expansionDraft
-			? "Expansion Draft"
-			: "Draft",
+				? "Expansion Draft"
+				: "Draft",
 	});
 	const remainingPicks = drafted.filter(p => p.pid < 0);
 	const nextPick = remainingPicks[0];
@@ -257,19 +258,24 @@ const Draft = ({
 								}
 
 								if (numUserPicksBefore > 0) {
-									const multipleTeams = userTids.length > 1;
-									const multiplePicks = numUserPicksBefore > 1;
-
 									const proceed = await confirm(
-										`Your team${multipleTeams ? "s" : ""} control${
-											multipleTeams ? "" : "s"
-										} ${numUserPicksBefore} pick${
-											multiplePicks ? "s" : ""
-										} before this one. The AI will make ${
-											multiplePicks ? "those draft picks" : "that draft pick"
-										} for you if you choose to sim to this pick.`,
+										`Your ${helpers.plural(
+											"team controls",
+											userTids.length,
+											"teams control",
+										)} ${numUserPicksBefore} ${helpers.plural(
+											"pick",
+											numUserPicksBefore,
+										)} before this one. The AI will make ${helpers.plural(
+											"that draft pick",
+											numUserPicksBefore,
+											"those draft picks",
+										)} for you if you choose to sim to this pick.`,
 										{
-											okText: `Let AI Make My Pick${multiplePicks ? "s" : ""}`,
+											okText: `Let AI Make My ${helpers.plural(
+												"Pick",
+												numUserPicksBefore,
+											)}`,
 											cancelText: "Cancel",
 										},
 									);
@@ -424,6 +430,22 @@ const Draft = ({
 
 				<RosterComposition className="mb-3 ms-sm-3" players={userPlayers} />
 			</div>
+
+			{undrafted.length > 1 ? (
+				<div className="mb-3">
+					<a
+						href={helpers.leagueUrl([
+							"compare_players",
+							undrafted
+								.slice(0, 5)
+								.map(p => `${p.pid}-${season}-r`)
+								.join(","),
+						])}
+					>
+						Compare top {Math.min(5, undrafted.length)} remaining prospects
+					</a>
+				</div>
+			) : null}
 
 			<div className={wrapperClasses}>
 				<div className={undraftedColClasses}>

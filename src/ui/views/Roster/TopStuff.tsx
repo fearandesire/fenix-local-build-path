@@ -1,4 +1,5 @@
 import { useState, type CSSProperties } from "react";
+import { OverlayTrigger, Popover } from "react-bootstrap";
 import {
 	RecordAndPlayoffs,
 	RosterComposition,
@@ -44,6 +45,101 @@ const TeamRating = ({
 	);
 };
 
+const PayrollAndPenalties = ({
+	isCurrentSeason,
+	luxuryPayroll,
+	luxuryTaxAmount,
+	minPayroll,
+	minPayrollAmount,
+	payroll,
+}: {
+	isCurrentSeason: boolean;
+} & Pick<
+	View<"roster">,
+	| "luxuryPayroll"
+	| "luxuryTaxAmount"
+	| "minPayroll"
+	| "minPayrollAmount"
+	| "payroll"
+>) => {
+	const payrollString = helpers.formatCurrency(payroll ?? 0, "M");
+
+	if (luxuryTaxAmount === undefined || minPayrollAmount === undefined) {
+		return payrollString;
+	}
+
+	if (luxuryTaxAmount === 0 && minPayrollAmount === 0) {
+		return payrollString;
+	}
+
+	return (
+		<OverlayTrigger
+			trigger="click"
+			placement="auto"
+			overlay={
+				<Popover>
+					<Popover.Body>
+						{isCurrentSeason ? (
+							<>
+								{luxuryTaxAmount > 0 ? (
+									<p>
+										Payroll is over the luxury tax limit of{" "}
+										{helpers.formatCurrency(luxuryPayroll, "M")}. Projected
+										penalty:{" "}
+										<span className="text-danger">
+											{helpers.formatCurrency(luxuryTaxAmount, "M")}
+										</span>
+									</p>
+								) : null}
+								{minPayrollAmount > 0 ? (
+									<p>
+										Payroll is under the minimum payroll limit of{" "}
+										{helpers.formatCurrency(minPayroll, "M")}. Projected
+										penalty:{" "}
+										<span className="text-danger">
+											{helpers.formatCurrency(minPayrollAmount, "M")}
+										</span>
+									</p>
+								) : null}
+							</>
+						) : (
+							<>
+								{luxuryTaxAmount > 0 ? (
+									<p>
+										Luxury tax paid:{" "}
+										<span className="text-danger">
+											{helpers.formatCurrency(luxuryTaxAmount, "M")}
+										</span>
+									</p>
+								) : null}
+								{minPayrollAmount > 0 ? (
+									<p>
+										Minimum payroll tax paid:{" "}
+										<span className="text-danger">
+											{helpers.formatCurrency(minPayrollAmount, "M")}
+										</span>
+									</p>
+								) : null}
+							</>
+						)}
+					</Popover.Body>
+				</Popover>
+			}
+			rootClose
+		>
+			<button
+				className="btn btn-link p-0 border-0 text-danger"
+				style={{
+					// Without this, alignment is a bit off compared to the text version
+					verticalAlign: "baseline",
+				}}
+			>
+				{payrollString}
+			</button>
+		</OverlayTrigger>
+	);
+};
+
 const TopStuff = ({
 	abbrev,
 	budget,
@@ -51,11 +147,15 @@ const TopStuff = ({
 	currentSeason,
 	editable,
 	godMode,
-	numConfs,
+	luxuryPayroll,
+	luxuryTaxAmount,
+	minPayroll,
+	minPayrollAmount,
 	numPlayoffRounds,
 	openRosterSpots,
 	payroll,
 	players,
+	playoffsByConf,
 	profit,
 	salaryCap,
 	salaryCapType,
@@ -72,10 +172,14 @@ const TopStuff = ({
 	| "currentSeason"
 	| "editable"
 	| "godMode"
-	| "numConfs"
+	| "luxuryPayroll"
+	| "luxuryTaxAmount"
+	| "minPayroll"
+	| "minPayrollAmount"
 	| "numPlayoffRounds"
 	| "payroll"
 	| "players"
+	| "playoffsByConf"
 	| "salaryCap"
 	| "salaryCapType"
 	| "season"
@@ -107,8 +211,8 @@ const TopStuff = ({
 					otl={t.seasonAttrs.otl}
 					tied={t.seasonAttrs.tied}
 					playoffRoundsWon={t.seasonAttrs.playoffRoundsWon}
+					playoffsByConf={playoffsByConf}
 					option="noSeason"
-					numConfs={numConfs}
 					numPlayoffRounds={numPlayoffRounds}
 					tid={tid}
 				/>
@@ -132,6 +236,8 @@ const TopStuff = ({
 	} else {
 		marginOfVictory = t.stats.pts - t.stats.oppPts;
 	}
+
+	const isCurrentSeason = season === currentSeason;
 
 	return (
 		<>
@@ -163,31 +269,35 @@ const TopStuff = ({
 							: {t.seasonAttrs.avgAge!.toFixed(1)}
 						</div>
 
-						{season === currentSeason ? (
-							<div className="mt-3">
-								{openRosterSpots} open roster spots
-								<br />
-								Payroll: {helpers.formatCurrency(payroll ?? 0, "M")}
-								<br />
-								{salaryCapType !== "none" ? (
-									<>
-										Salary cap: {helpers.formatCurrency(salaryCap, "M")}
-										<br />
-									</>
-								) : null}
-								{budget ? (
-									<>
-										Profit: {helpers.formatCurrency(profit, "M")}
-										<br />
-									</>
-								) : null}
-								{showTradeFor ? `Strategy: ${t.strategy}` : null}
+						{isCurrentSeason ? (
+							<div className="mt-3">{openRosterSpots} open roster spots</div>
+						) : null}
+						{payroll !== undefined ? (
+							<div>
+								{isCurrentSeason ? "Payroll" : "End of season payroll"}:{" "}
+								<PayrollAndPenalties
+									isCurrentSeason={isCurrentSeason}
+									luxuryPayroll={luxuryPayroll}
+									luxuryTaxAmount={luxuryTaxAmount}
+									minPayroll={minPayroll}
+									minPayrollAmount={minPayrollAmount}
+									payroll={payroll}
+								/>
 							</div>
+						) : null}
+						{isCurrentSeason && salaryCapType !== "none" ? (
+							<div>Salary cap: {helpers.formatCurrency(salaryCap, "M")}</div>
+						) : null}
+						{isCurrentSeason && budget ? (
+							<div>Profit: {helpers.formatCurrency(profit, "M")}</div>
+						) : null}
+						{isCurrentSeason && showTradeFor ? (
+							<div>Strategy: {t.strategy}</div>
 						) : null}
 					</div>
 				</div>
 				<div className="d-md-flex">
-					{season === currentSeason ? (
+					{isCurrentSeason ? (
 						<div className="ms-sm-5 mt-3 mt-sm-0">
 							<RosterComposition players={players} />
 						</div>

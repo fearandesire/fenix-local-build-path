@@ -1,5 +1,5 @@
 import { idb } from "../db";
-import { g, random } from "../util";
+import { g, helpers, random } from "../util";
 import type { TradeTeams, UpdateEvents } from "../../common/types";
 import isUntradable from "../core/trade/isUntradable";
 import makeItWork from "../core/trade/makeItWork";
@@ -102,6 +102,21 @@ const getOffers = async (seed: number) => {
 	return augmentOffers(offers);
 };
 
+// offers[number].summary.trade includes players with no stats, and offers[number].players includes players with stats. Make them the same. Plus ratings and age!
+export const fixPlayers = (
+	offer: Awaited<ReturnType<typeof getOffers>>[number],
+	summaryTeamsIndex: number,
+	playersWithStats: any[],
+) => {
+	const t = offer.summary.teams[summaryTeamsIndex];
+	for (const p of t.trade) {
+		const p2 = playersWithStats.find(p2 => p2.pid === p.pid);
+		p.stats = p2.stats;
+		p.ratings = p2.ratings;
+		p.age = p2.age;
+	}
+};
+
 const updateTradeProposals = async (
 	inputs: unknown,
 	updateEvents: UpdateEvents,
@@ -116,7 +131,7 @@ const updateTradeProposals = async (
 			"teamSeasonsByTidSeason",
 			[g.get("userTid"), g.get("season")],
 		);
-		const gp = teamSeason?.gp ?? 0;
+		const gp = teamSeason ? helpers.getTeamSeasonGp(teamSeason) : 0;
 
 		const NUM_GAMES_BEFORE_NEW_OFFERS = 10;
 
@@ -127,20 +142,6 @@ const updateTradeProposals = async (
 
 		const offers = await getOffers(seed);
 
-		// offers[number].summary.trade includses players with no stats, and offers[number].players includes players with stats. Make them the same. Plus ratings and age!
-		const fixPlayers = (
-			offer: (typeof offers)[number],
-			summaryTeamsIndex: number,
-			playersWithStats: any[],
-		) => {
-			const t = offer.summary.teams[summaryTeamsIndex];
-			for (const p of t.trade) {
-				const p2 = playersWithStats.find(p2 => p2.pid === p.pid);
-				p.stats = p2.stats;
-				p.ratings = p2.ratings;
-				p.age = p2.age;
-			}
-		};
 		for (const offer of offers) {
 			fixPlayers(offer, 1, offer.players);
 			fixPlayers(offer, 0, offer.playersUser);

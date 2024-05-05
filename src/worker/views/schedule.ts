@@ -2,8 +2,8 @@ import { player, season, team } from "../core";
 import { idb } from "../db";
 import { g, getProcessedGames } from "../util";
 import type { UpdateEvents, ViewInput, Game } from "../../common/types";
-import orderBy from "lodash-es/orderBy";
 import { bySport, PHASE } from "../../common";
+import { orderBy } from "../../common/utils";
 
 export const getUpcoming = async ({
 	day,
@@ -171,7 +171,7 @@ const updateUpcoming = async (
 			elamASG: g.get("elamASG"),
 			phase: g.get("phase"),
 			tid: inputs.tid,
-			ties: g.get("ties", "current"),
+			ties: season.hasTies("current"),
 			upcoming,
 		};
 	}
@@ -237,7 +237,7 @@ const updateCompleted = async (
 	if (updateEvents.includes("firstRun") || inputs.abbrev !== state.abbrev) {
 		// Load all games in list
 		const completed = await getProcessedGames({
-			abbrev: inputs.abbrev,
+			tid: inputs.tid,
 			season: g.get("season"),
 			includeAllStarGame: true,
 		});
@@ -255,7 +255,7 @@ const updateCompleted = async (
 		const completed = Array.isArray(state.completed) ? state.completed : [];
 
 		const games = await getProcessedGames({
-			abbrev: inputs.abbrev,
+			tid: inputs.tid,
 			season: g.get("season"),
 			loadedGames: state.completed,
 			includeAllStarGame: true,

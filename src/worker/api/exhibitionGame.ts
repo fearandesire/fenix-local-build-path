@@ -1,4 +1,3 @@
-import orderBy from "lodash-es/orderBy";
 import {
 	DEFAULT_PLAY_THROUGH_INJURIES,
 	DEFAULT_STADIUM_CAPACITY,
@@ -7,7 +6,7 @@ import {
 	PHASE,
 	unwrapGameAttribute,
 } from "../../common";
-import { groupBy } from "../../common/groupBy";
+import { groupBy, orderBy } from "../../common/utils";
 import type {
 	Conditions,
 	GameAttributesLeague,
@@ -23,8 +22,16 @@ import { gameSimToBoxScore } from "../core/game/writeGameStats";
 import { getRosterOrderByPid } from "../core/team/rosterAutoSort.basketball";
 import { connectLeague, idb } from "../db";
 import { getPlayersActiveSeason } from "../db/getCopies/players";
-import { defaultGameAttributes, g, helpers, local, toUI } from "../util";
+import {
+	defaultGameAttributes,
+	g,
+	helpers,
+	local,
+	random,
+	toUI,
+} from "../util";
 import { boxScoreToLiveSim } from "../views/liveGame";
+import getPlayoffsByConf from "../core/season/getPlayoffsByConf";
 
 export const getLeagues = async () => {
 	const leagues = await idb.meta.getAll("leagues");
@@ -93,9 +100,10 @@ const getSeasonInfoLeague = async ({
 	}
 
 	const numGamesPlayoffSeries = await getGameAttribute("numGamesPlayoffSeries");
-	const confs = await getGameAttribute("confs");
 	const currentSeason = await getGameAttribute("season");
 	const currentPhase = await getGameAttribute("phase");
+	const confs = await getGameAttribute("confs");
+	const playoffsByConf = await getGameAttribute("playoffsByConf");
 
 	const isCurrentOngoingSeason =
 		season === currentSeason && currentPhase < PHASE.DRAFT;
@@ -129,6 +137,10 @@ const getSeasonInfoLeague = async ({
 	});
 	const playersByTid = groupBy(players, p => p.stats[0].tid);
 
+	const playoffSeries = await league
+		.transaction("playoffSeries")
+		.store.get(season);
+
 	const exhibitionTeams: ExhibitionTeamWithPop[] = await Promise.all(
 		teamSeasons.map(async teamSeason => {
 			const tid = teamSeason.tid;
@@ -141,7 +153,12 @@ const getSeasonInfoLeague = async ({
 				roundsWonText = helpers.roundsWonText(
 					teamSeason.playoffRoundsWon,
 					numGamesPlayoffSeries.length,
-					confs.length,
+					await getPlayoffsByConf(teamSeason.season, {
+						confs,
+						playoffSeries,
+						playoffsByConf,
+						skipPlayoffSeries: false,
+					}),
 					true,
 				);
 			}
@@ -239,6 +256,7 @@ const getSeasonInfoLeague = async ({
 			return {
 				abbrev: teamSeason.abbrev ?? t.abbrev,
 				imgURL: teamSeason.imgURL ?? t.imgURL,
+				imgURLSmall: teamSeason.imgURLSmall ?? t.imgURLSmall,
 				region: teamSeason.region ?? t.region,
 				name: teamSeason.name ?? t.name,
 				pop: teamSeason.pop ?? t.pop,
@@ -248,10 +266,10 @@ const getSeasonInfoLeague = async ({
 				tid,
 				season,
 				seasonInfo: {
-					won: teamSeason.won ?? 0,
-					lost: teamSeason.lost ?? 0,
-					tied: teamSeason.tied ?? 0,
-					otl: teamSeason.otl ?? 0,
+					won: teamSeason.won,
+					lost: teamSeason.lost,
+					tied: teamSeason.tied,
+					otl: teamSeason.otl,
 					roundsWonText,
 				},
 				ovr: 0,
@@ -291,9 +309,11 @@ export const getSeasonInfo = async (
 		const info = await realRosters.getLeagueInfo({
 			phase: PHASE.PLAYOFFS,
 			randomDebuts: false,
+			randomDebutsKeepCurrent: false,
 			realDraftRatings: "rookie",
 			realStats: "lastSeason",
 			includeSeasonInfo: true,
+			includePlayers: false,
 			...options,
 		});
 		gameAttributes = info.gameAttributes;
@@ -338,8 +358,8 @@ export const getSeasonInfo = async (
 };
 
 type ExhibitionGamePhase =
-	| typeof PHASE["REGULAR_SEASON"]
-	| typeof PHASE["PLAYOFFS"];
+	| (typeof PHASE)["REGULAR_SEASON"]
+	| (typeof PHASE)["PLAYOFFS"];
 
 export const simExhibitionGame = async (
 	{
@@ -395,11 +415,6 @@ export const simExhibitionGame = async (
 					otl: t.seasonInfo?.otl ?? 0,
 					cid: 0,
 					did: 0,
-					expenses: {
-						health: {
-							rank: 1,
-						},
-					},
 				},
 				t.players,
 				true,
@@ -415,8 +430,11 @@ export const simExhibitionGame = async (
 		}
 	}
 
+	// Hacky, but if you send the same gid once, processLiveGameEvents won't reset playersByPid
+	const gid = random.randInt(0, 1000000000);
+
 	const result = new GameSim({
-		gid: 0,
+		gid,
 		day: -1,
 		teams: teamsProcessed,
 		doPlayByPlay: true,

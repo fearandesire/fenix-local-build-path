@@ -1,3 +1,4 @@
+import addAward from "./addAward";
 import addRatingsRow from "./addRatingsRow";
 import addRelatives from "./addRelatives";
 import addStatsRow from "./addStatsRow";
@@ -9,6 +10,7 @@ import checkStatisticalFeat from "./checkStatisticalFeat";
 import compositeRating from "./compositeRating";
 import contractSeasonsRemaining from "./contractSeasonsRemaining";
 import develop from "./develop";
+import developSeason from "./developSeason";
 import fuzzRating from "./fuzzRating";
 import fuzzOvrs from "./fuzzOvrs";
 import genContract from "./genContract";
@@ -44,6 +46,7 @@ import value from "./value";
 import valueCombineOvrPot from "./valueCombineOvrPot";
 
 export default {
+	addAward,
 	addRatingsRow,
 	addRelatives,
 	addStatsRow,
@@ -55,6 +58,7 @@ export default {
 	compositeRating,
 	contractSeasonsRemaining,
 	develop,
+	developSeason,
 	fuzzRating,
 	fuzzOvrs,
 	genContract,

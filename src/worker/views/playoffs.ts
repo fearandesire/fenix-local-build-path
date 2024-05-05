@@ -6,7 +6,7 @@ import type {
 	ViewInput,
 	PlayoffSeries,
 } from "../../common/types";
-import { groupBy } from "../../common/groupBy";
+import { groupBy } from "../../common/utils";
 
 type SeriesTeam = {
 	abbrev: string;
@@ -15,6 +15,7 @@ type SeriesTeam = {
 	imgURLSmall?: string;
 	pendingPlayIn?: true;
 	pts?: number;
+	sPts?: number;
 	region: string;
 	regularSeason: {
 		won: number;

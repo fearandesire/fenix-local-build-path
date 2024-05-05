@@ -12,6 +12,7 @@ import type {
 	ViewInput,
 } from "../../common/types";
 import { player, team } from "../core";
+import getPlayoffsByConf from "../core/season/getPlayoffsByConf";
 import { idb } from "../db";
 import { g, getTeamInfoBySeason, helpers } from "../util";
 import { assetIsPlayer, getPlayerFromPick } from "../util/formatEventText";
@@ -84,6 +85,7 @@ const findStatSum = (
 
 	let statSum = 0;
 	let statSumTeam = 0;
+	let seenOtherTeam = false;
 	for (let i = 0; i < allStats.length; i++) {
 		const row = allStats[i];
 
@@ -103,8 +105,10 @@ const findStatSum = (
 		) {
 			statSum += stat;
 
-			if (row.tid === tid) {
+			if (row.tid === tid && !seenOtherTeam) {
 				statSumTeam += stat;
+			} else {
+				seenOtherTeam = true;
 			}
 		}
 
@@ -122,7 +126,7 @@ const findStatSum = (
 					};
 				}
 				statSumsBySeason[row.season].stat += stat;
-				if (row.tid === tid) {
+				if (row.tid === tid && !seenOtherTeam) {
 					statSumsBySeason[row.season].statTeam += stat;
 				}
 			}
@@ -191,10 +195,6 @@ const getSeasonsToPlot = async (
 
 	const seasons = [];
 
-	const teamSeasonsIndex = idb.league
-		.transaction("teamSeasons")
-		.store.index("tid, season");
-
 	for (let i = start; i <= end; i++) {
 		type Team = {
 			winp?: number;
@@ -222,16 +222,13 @@ const getSeasonsToPlot = async (
 		];
 		for (let j = 0; j < tids.length; j++) {
 			const tid = tids[j];
-			let teamSeason;
-			if (i === g.get("season")) {
-				teamSeason = await idb.cache.teamSeasons.indexGet(
-					"teamSeasonsByTidSeason",
-					[tid, i],
-				);
-			}
-			if (!teamSeason) {
-				teamSeason = await teamSeasonsIndex.get([tid, i]);
-			}
+			const teamSeason = await idb.getCopy.teamSeasons(
+				{
+					season: i,
+					tid,
+				},
+				"noCopyCache",
+			);
 
 			if (
 				teamSeason &&
@@ -244,8 +241,8 @@ const getSeasonsToPlot = async (
 					...teams[j],
 					won: teamSeason.won,
 					lost: teamSeason.lost,
-					tied: teamSeason.tied ?? 0,
-					otl: teamSeason.otl ?? 0,
+					tied: teamSeason.tied,
+					otl: teamSeason.otl,
 					winp: helpers.calcWinp(teamSeason),
 					ptsPct: team.ptsPct(teamSeason),
 					champ:
@@ -254,7 +251,10 @@ const getSeasonsToPlot = async (
 					region: teamSeason.region ?? g.get("teamInfoCache")[tid].region,
 					name: teamSeason.name ?? g.get("teamInfoCache")[tid].name,
 					abbrev: teamSeason.abbrev ?? g.get("teamInfoCache")[tid].abbrev,
-					roundsWonText: getRoundsWonText(teamSeason).toLocaleLowerCase(),
+					roundsWonText: getRoundsWonText(
+						teamSeason,
+						await getPlayoffsByConf(teamSeason.season),
+					).toLocaleLowerCase(),
 				};
 			}
 

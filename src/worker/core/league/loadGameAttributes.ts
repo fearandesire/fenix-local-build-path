@@ -12,13 +12,15 @@ import { gameAttributesKeysOtherSports } from "../../../common/defaultGameAttrib
 export const ALWAYS_WRAP = [
 	"confs",
 	"divs",
+	"maxOvertimes",
+	"numGames",
 	"numGamesPlayoffSeries",
 	"numPlayoffByes",
 	"otl",
 	"playoffsNumTeamsDiv",
 	"pointsFormula",
+	"shootoutRounds",
 	"tiebreakers",
-	"ties",
 	"userTid",
 ];
 

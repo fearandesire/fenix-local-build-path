@@ -3,16 +3,17 @@
  *
  * Run this like (after unskipping the test):
  *
- * $ SPORT=basketball yarn jest src/worker/core/player/genRatings.test.ts | grep QUARTILES
+ * $ SPORT=basketball pnpm jest src/worker/core/player/genRatings.test.ts | grep QUARTILES
  *
  * It's in jest rather than node.js because jest has all the imports and crap set up.
  */
 
-import range from "lodash-es/range";
 import { PLAYER } from "../../../common";
 import testHelpers from "../../../test/helpers";
 import { g } from "../../util";
 import createRandomPlayers from "../league/create/createRandomPlayers";
+import { DEFAULT_LEVEL } from "../../../common/budgetLevels";
+import { range } from "../../../common/utils";
 
 const printQuartiles = async (age?: number) => {
 	if (age !== undefined) {
@@ -22,7 +23,7 @@ const printQuartiles = async (age?: number) => {
 
 	const players = await createRandomPlayers({
 		activeTids: range(30),
-		scoutingRank: 15.5,
+		scoutingLevel: DEFAULT_LEVEL,
 		teams: range(30).map(tid => ({ tid })),
 	});
 
@@ -44,8 +45,8 @@ describe.skip("worker/core/player/genRatings", () => {
 	test("this is not actually a test, see comment at the top of the file", async () => {
 		await printQuartiles();
 
-		for (const age of range(0, 50, 5)) {
+		/*for (const age of range(0, 50, 5)) {
 			await printQuartiles(age);
-		}
+		}*/
 	});
 });

@@ -1,5 +1,5 @@
 import classNames from "classnames";
-import { groupBy } from "../../common/groupBy";
+import { groupBy } from "../../common/utils";
 import { Fragment, useEffect } from "react";
 import useTitleBar from "../hooks/useTitleBar";
 import { getCols, helpers, useLocal } from "../util";
@@ -322,6 +322,7 @@ const Achievements = ({ achievements }: View<"achievements">) => {
 		title: "Achievements",
 	});
 	const username = useLocal(state => state.username);
+	console.log("RENDER", username);
 	const loggedIn = !!username;
 
 	useEffect(() => {

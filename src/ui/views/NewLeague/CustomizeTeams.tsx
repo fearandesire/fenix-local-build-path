@@ -4,18 +4,19 @@ import type { NewLeagueTeamWithoutRank } from "./types";
 import type { Conf, Div, Player, View } from "../../../common/types";
 import classNames from "classnames";
 import { arrayMoveImmutable } from "array-move";
-import orderBy from "lodash-es/orderBy";
 import UpsertTeamModal from "./UpsertTeamModal";
-import countBy from "lodash-es/countBy";
 import { StickyBottomButtons } from "../../components";
 import { logEvent, toWorker } from "../../util";
-import confirmDeleteWithChlidren from "./confirmDeleteWithChlidren";
+import confirmDeleteWithChildren from "./confirmDeleteWithChildren";
 import { Dropdown, OverlayTrigger, Popover } from "react-bootstrap";
 import { ProcessingSpinner } from "../../components/ActionButton";
 import { applyRealTeamInfos, MAX_SEASON } from ".";
 import RandomizeTeamsModal from "./RandomizeTeamsModal";
+import { countBy, orderBy } from "../../../common/utils";
 
-const makeTIDsSequential = <T extends { tid: number }>(teams: T[]): T[] => {
+export const makeTIDsSequential = <T extends { tid: number }>(
+	teams: T[],
+): T[] => {
 	return teams.map((t, i) => ({
 		...t,
 		tid: i,
@@ -557,7 +558,7 @@ const Division = ({
 									})`,
 								};
 							});
-						const { proceed, key } = await confirmDeleteWithChlidren({
+						const { proceed, key } = await confirmDeleteWithChildren({
 							text: `When the "${div.name}" division is deleted, what should happen to its teams?`,
 							deleteButtonText: "Delete Division",
 							deleteChildrenText: `Delete all teams in the "${div.name}" division`,
@@ -661,7 +662,7 @@ const Conference = ({
 								key: conf2.cid,
 								text: `Move divisions to "${conf2.name}" conference`,
 							}));
-						const { proceed, key } = await confirmDeleteWithChlidren({
+						const { proceed, key } = await confirmDeleteWithChildren({
 							text: `When the "${conf.name}" conference is deleted, what should happen to its divisions?`,
 							deleteButtonText: "Delete Conference",
 							deleteChildrenText: `Delete all divisions in the "${conf.name}" conference`,
@@ -825,10 +826,12 @@ const CustomizeTeams = ({
 		real,
 		weightByPopulation,
 		northAmericaOnly,
+		seasonRange,
 	}: {
 		real: boolean;
 		weightByPopulation: boolean;
 		northAmericaOnly: boolean;
+		seasonRange: [number, number];
 	}) => {
 		setRandomizingState("randomizing");
 
@@ -849,11 +852,16 @@ const CustomizeTeams = ({
 			);
 
 			const response = await toWorker("main", "getRandomTeams", {
-				divs: myDivs,
-				numTeamsPerDiv,
+				divInfo: {
+					type: "explicit",
+					confs: myConfs,
+					divs: myDivs,
+					numTeamsPerDiv,
+				},
 				real,
 				weightByPopulation,
 				northAmericaOnly,
+				seasonRange,
 			});
 
 			if (typeof response === "string") {
@@ -864,8 +872,8 @@ const CustomizeTeams = ({
 				});
 			} else {
 				const newTeams = real
-					? applyRealTeamInfos(response, realTeamInfo, "inTeamObject")
-					: response;
+					? applyRealTeamInfos(response.teams, realTeamInfo, "inTeamObject")
+					: response.teams;
 
 				dispatch({
 					type: "setState",

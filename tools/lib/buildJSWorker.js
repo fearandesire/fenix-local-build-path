@@ -4,7 +4,7 @@ import { parentPort, workerData } from "node:worker_threads";
 
 const LODASH_BLACKLIST = [
 	/^lodash$/,
-	/^lodash-es$/,
+	/^lodash-es/,
 
 	// lodash/debounce and lodash/memoize are used by visx
 	/^lodash\/(?!debounce|memoize)/,
@@ -30,8 +30,9 @@ const buildFile = async (name, legacy, rev) => {
 
 	let format;
 	if (legacy) {
-		// SystemJS for chunk loading in UI. IIFE for worker.
-		format = name === "ui" ? "system" : "iife";
+		// ES modules don't work in workers in all the browsers currently supported
+		// Chrome 80, Firefox 114, Safari 15.5/16.4
+		format = name === "ui" ? "es" : "iife";
 	} else {
 		format = "es";
 	}

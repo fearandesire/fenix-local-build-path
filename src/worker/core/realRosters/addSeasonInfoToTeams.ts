@@ -1,5 +1,5 @@
 import { PLAYER, unwrapGameAttribute } from "../../../common";
-import { groupBy } from "../../../common/groupBy";
+import { groupBy } from "../../../common/utils";
 import type {
 	GameAttributesLeague,
 	GetLeagueOptions,
@@ -152,7 +152,7 @@ const addSeasonInfoToTeams = async <
 					roundsWonText = helpers.roundsWonText(
 						playoffRoundsWon,
 						gameAttributes.numGamesPlayoffSeries!.length,
-						gameAttributes.confs.length,
+						gameAttributes.confs.length === 2,
 						true,
 					);
 				}

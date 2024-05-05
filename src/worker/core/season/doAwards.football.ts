@@ -1,4 +1,3 @@
-import orderBy from "lodash-es/orderBy";
 import {
 	getPlayers,
 	getTopPlayers,
@@ -13,6 +12,7 @@ import { g } from "../../util";
 import type { Conditions, PlayerFiltered } from "../../../common/types";
 
 import type { AwardPlayer, Awards } from "../../../common/types.football";
+import { orderBy } from "../../../common/utils";
 
 const getPlayerInfo = (p: PlayerFiltered): AwardPlayer => {
 	return {
@@ -220,10 +220,12 @@ const getRealFinalsMvp = async (
 	players: PlayerFiltered[],
 	champTid: number,
 ): Promise<AwardPlayer | undefined> => {
-	const games = await idb.cache.games.getAll(); // Last game of the season will have the two finals teams
+	const games = await idb.cache.games.getAll();
 
-	const finalsTids = games.at(-1)!.teams.map(t => t.tid); // Get all playoff games between those two teams - that will be all finals games
+	// Last game of the season will have the two finals teams
+	const finalsTids = games.at(-1)!.teams.map(t => t.tid);
 
+	// Get all playoff games between those two teams - that will be all finals games
 	const finalsGames = games.filter(
 		game =>
 			game.playoffs &&
@@ -295,12 +297,12 @@ export const mvpScore = (p: PlayerFiltered) => {
 	return posMultiplier * p.currentStats.av;
 };
 export const dpoyScore = (p: PlayerFiltered) => {
-	const posBonus = p.pos === "LB" ? 2 : 0;
+	const posBonus = p.pos === "LB" ? 8 : 0;
 	return (
 		posBonus +
 		p.currentStats.av +
-		1.5 * p.currentStats.defSk +
-		p.currentStats.defTck / 12 +
+		1.75 * p.currentStats.defSk +
+		p.currentStats.defTck / 10 +
 		p.currentStats.defInt * 4 +
 		p.currentStats.defPssDef +
 		5 *
@@ -310,9 +312,14 @@ export const dpoyScore = (p: PlayerFiltered) => {
 	);
 };
 
-const rookieFilter = (p: PlayerFiltered) => {
-	// This doesn't factor in players who didn't start playing right after being drafted, because currently that doesn't really happen in the game.
-	return p.draft.year === p.currentStats.season - 1;
+// This doesn't factor in players who didn't start playing right after being drafted, because currently that doesn't really happen in the game.
+const royFilter = (p: PlayerFiltered) => {
+	const repeatSeason = g.get("repeatSeason");
+	return (
+		p.draft.year === p.currentStats.season - 1 ||
+		(repeatSeason !== undefined &&
+			p.draft.year === repeatSeason.startingSeason - 1)
+	);
 };
 
 const doAwards = async (conditions: Conditions) => {
@@ -397,7 +404,7 @@ const doAwards = async (conditions: Conditions) => {
 		{
 			allowNone: true,
 			amount: Infinity,
-			filter: rookieFilter,
+			filter: royFilter,
 			score: mvpScore,
 		},
 		players,
@@ -408,7 +415,7 @@ const doAwards = async (conditions: Conditions) => {
 		{
 			allowNone: true,
 			amount: Infinity,
-			filter: rookieFilter,
+			filter: royFilter,
 			score: dpoyScore,
 		},
 		players,

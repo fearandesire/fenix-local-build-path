@@ -1,8 +1,7 @@
-import range from "lodash-es/range";
-import orderBy from "lodash-es/orderBy";
 import type { State } from "./Play";
 import type { TeamNum } from "./types";
 import { random } from "../../util";
+import { orderBy, range } from "../../../common/utils";
 
 // Sort by looking at a bunch of different factors in order of importance
 const getBestPenaltyResult = <
@@ -13,6 +12,8 @@ const getBestPenaltyResult = <
 	results: T[],
 	initialState: State,
 	t: TeamNum,
+	timeExpiredAtEndOfHalf: boolean,
+	gameCanEndAtEndOfPeriod: boolean,
 ): T => {
 	// console.log("getBestPenaltyResult", t);
 	// console.log("initialState", JSON.parse(JSON.stringify(initialState)));
@@ -62,6 +63,21 @@ const getBestPenaltyResult = <
 			madeLateFG = 1;
 		} else if (state.madeLateFG === t2) {
 			madeLateFG = -1;
+		}
+
+		// Penalty at end of period to give an untimed possession - good at end of game if losing/tied, and good at end of half if team didn't score
+		let playUntimedPossession = 0;
+		if (timeExpiredAtEndOfHalf) {
+			const pointsDown = state.pts[t2] - state.pts[t];
+			if (
+				(state.o === t &&
+					gameCanEndAtEndOfPeriod &&
+					pointsDown >= 0 &&
+					pointsDown <= 8) ||
+				(!gameCanEndAtEndOfPeriod && ptsScoredThisPlay[t] === 0)
+			) {
+				playUntimedPossession = 1;
+			}
 		}
 
 		// Change of possession
@@ -135,6 +151,7 @@ const getBestPenaltyResult = <
 			tdScore,
 			missedXP,
 			madeLateFG,
+			playUntimedPossession,
 			changeOfPossession,
 			firstDown,
 			anyScore,

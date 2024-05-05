@@ -43,8 +43,6 @@ export default (nodeEnv, { blacklistOptions, statsFilename, legacy } = {}) => {
 					nodeEnv === "production"
 						? path.resolve(root, "src/worker/core/debug/prod.ts")
 						: path.resolve(root, "src/worker/core/debug/index.ts"),
-
-				"ajv-hack": path.resolve(root, "src/worker/ajvHack/esbuild.js"),
 			},
 		}),
 		replace({
@@ -105,9 +103,21 @@ export default (nodeEnv, { blacklistOptions, statsFilename, legacy } = {}) => {
 		plugins,
 		onwarn(warning, rollupWarn) {
 			// I don't like this, but there's too much damn baggage
-			if (warning.code !== "CIRCULAR_DEPENDENCY") {
-				rollupWarn(warning);
+			if (warning.code === "CIRCULAR_DEPENDENCY") {
+				return;
 			}
+
+			// I don't care about "use client" because I don't use RSC
+			if (
+				warning.code === "MODULE_LEVEL_DIRECTIVE" &&
+				warning.message.includes('"use client"') &&
+				warning.id.includes("react-bootstrap")
+			) {
+				return;
+			}
+
+			rollupWarn(warning);
+			console.log(warning.code, warning);
 		},
 		watch: {
 			// https://github.com/rollup/rollup/issues/1666#issuecomment-536227450

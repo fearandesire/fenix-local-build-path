@@ -9,7 +9,7 @@ import {
 } from "../../util";
 import { wrap } from "../../util/g";
 import type { GameAttributesLeague } from "../../../common/types";
-import { finances, draft, team } from "..";
+import { draft, team } from "..";
 import gameAttributesToUI from "./gameAttributesToUI";
 import { unwrapGameAttribute } from "../../../common";
 import { getAutoTicketPriceByTid } from "../game/attendance";
@@ -112,13 +112,6 @@ const setGameAttributes = async (
 				);
 				const popRanks = helpers.getPopRanks(teamSeasons);
 
-				const keys: (keyof (typeof teams)[number]["budget"])[] = [
-					"scouting",
-					"coaching",
-					"health",
-					"facilities",
-				];
-
 				for (let i = 0; i < teamSeasons.length; i++) {
 					const t = teams.find(t => t.tid === teamSeasons[i].tid);
 					const popRank = popRanks[i];
@@ -134,41 +127,29 @@ const setGameAttributes = async (
 						!g.get("spectator")
 					) {
 						if (t.adjustForInflation) {
-							for (const key of keys) {
-								const factor =
-									helpers.defaultBudgetAmount(t.budget[key].rank, value) /
-									helpers.defaultBudgetAmount(t.budget[key].rank);
-
-								t.budget[key].amount =
-									Math.round((t.budget[key].amount * factor) / 10) * 10;
-							}
-
 							if (t.autoTicketPrice !== false) {
-								t.budget.ticketPrice.amount = await getAutoTicketPriceByTid(
-									t.tid,
-								);
+								t.budget.ticketPrice = await getAutoTicketPriceByTid(t.tid);
 							} else {
 								const factor =
-									helpers.defaultTicketPrice(t.budget.ticketPrice.rank, value) /
-									helpers.defaultTicketPrice(t.budget.ticketPrice.rank);
+									helpers.defaultTicketPrice(popRank, value) /
+									helpers.defaultTicketPrice(popRank);
 
-								t.budget.ticketPrice.amount = parseFloat(
-									(t.budget.ticketPrice.amount * factor).toFixed(2),
+								t.budget.ticketPrice = helpers.localeParseFloat(
+									(t.budget.ticketPrice * factor).toFixed(2),
 								);
 							}
 
 							updated = true;
 						}
 					} else {
-						await team.autoBudgetSettings(t, popRank, value);
+						await team.resetTicketPrice(t, popRank, value);
+						updated = true;
 					}
 
 					if (updated) {
 						await idb.cache.teams.put(t);
 					}
 				}
-
-				await finances.updateRanks(["budget"]);
 			}
 		}
 

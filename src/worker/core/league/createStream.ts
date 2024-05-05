@@ -4,7 +4,7 @@ import {
 	applyRealTeamInfo,
 	DEFAULT_STADIUM_CAPACITY,
 	isSport,
-	MAX_SUPPORTED_LEAGUE_VERSION,
+	LEAGUE_DATABASE_VERSION,
 	PHASE,
 	PLAYER,
 	SPORT_HAS_REAL_PLAYERS,
@@ -50,10 +50,11 @@ import createRandomPlayers from "./create/createRandomPlayers";
 import getRealTeamPlayerData from "./create/getRealTeamPlayerData";
 import createGameAttributes from "./createGameAttributes";
 import initRandomDebutsForRandomPlayersLeague from "./initRandomDebutsForRandomPlayersLeague";
-import initRepeatSeason from "./initRepeatSeason";
+import setRepeatSeason from "./setRepeatSeason";
 import processPlayerNewLeague from "./processPlayerNewLeague";
 import remove from "./remove";
 import { TOO_MANY_TEAMS_TOO_SLOW } from "../season/getInitialNumGamesConfDivSettings";
+import { DEFAULT_LEVEL, amountToLevel } from "../../../common/budgetLevels";
 
 export type TeamInfo = TeamBasic & {
 	disabled?: boolean;
@@ -180,7 +181,7 @@ export type PreProcessParams = {
 	noStartingInjuries: boolean;
 	realPlayerPhotos: RealPlayerPhotos | undefined;
 	realTeamInfo: RealTeamInfo | undefined;
-	scoutingRank: number;
+	scoutingLevel: number;
 	version: number | undefined;
 };
 
@@ -194,7 +195,7 @@ const preProcess = async (
 		noStartingInjuries,
 		realPlayerPhotos,
 		realTeamInfo,
-		scoutingRank,
+		scoutingLevel,
 		version,
 	}: PreProcessParams,
 ) => {
@@ -227,7 +228,7 @@ const preProcess = async (
 			hasRookieContracts,
 			noStartingInjuries,
 			realPlayerPhotos,
-			scoutingRank,
+			scoutingLevel,
 			version,
 		});
 	} else if (key === "scheduledEvents") {
@@ -250,6 +251,23 @@ const preProcess = async (
 			} else if (x.type === "teamInfo") {
 				applyRealTeamInfo(x.info, realTeamInfo, x.season);
 			}
+		}
+	} else if (key === "playerFeats") {
+		// Version 60 upgrade
+		if (
+			x.won !== undefined &&
+			x.result === undefined &&
+			typeof x.score === "string"
+		) {
+			const pts = (x.score as string).split("-").map(y => parseInt(y));
+			let diff = -Infinity;
+			if (!Number.isNaN(pts[0]) && !Number.isNaN(pts[1])) {
+				diff = pts[0] - pts[1];
+			}
+
+			x.result = diff === 0 ? "T" : x.won ? "W" : "L";
+
+			delete x.won;
 		}
 	}
 
@@ -406,7 +424,13 @@ const finalizeGameAttributes = async ({
 	gameAttributes: any;
 	gameAttributeOverrides: GameAttributeOverrides;
 	getLeagueOptions: GetLeagueOptions | undefined;
-	randomization: "none" | "shuffle" | "debuts" | "debutsForever";
+	randomization:
+		| "none"
+		| "shuffle"
+		| "debuts"
+		| "debutsKeepCurrent"
+		| "debutsForever"
+		| "debutsForeverKeepCurrent";
 	startingSeason: number;
 	teamsCameFromFile: boolean;
 	teamInfos: TeamInfo[];
@@ -595,17 +619,22 @@ const confirmSequential = (objs: any, key: string, objectName: string) => {
 	return values;
 };
 
-const processTeamInfos = ({
+const processTeamInfos = async ({
+	gameAttributes,
 	realTeamInfo,
-	season,
 	teamInfos,
 	userTid,
 }: {
+	gameAttributes: {
+		salaryCap: number;
+		season: number;
+	};
 	realTeamInfo: RealTeamInfo | undefined;
-	season: number;
 	teamInfos: any[];
 	userTid: number;
 }) => {
+	const { salaryCap, season } = gameAttributes;
+
 	if (realTeamInfo) {
 		for (const t of teamInfos) {
 			applyRealTeamInfo(t, realTeamInfo, season);
@@ -621,12 +650,39 @@ const processTeamInfos = ({
 		}
 	}
 
+	// Version 55 upgrade
+	for (const t of teamInfos) {
+		if (t.budget) {
+			for (const key of Object.keys(t.budget)) {
+				const value = t.budget[key];
+				if (typeof value !== "number") {
+					if (key === "ticketPrice") {
+						t.budget[key] = value.amount;
+					} else {
+						t.budget[key] = amountToLevel(
+							value?.amount ?? DEFAULT_LEVEL,
+							salaryCap,
+						);
+					}
+				}
+			}
+
+			// initialBudget will be created in team.generate below
+		}
+	}
+
 	const teams = teamInfos.map(t => team.generate(t));
+
+	// Version 55 upgrade
+	const budgetsByTid: Record<number, Team["budget"]> = {};
+	for (const t of teams) {
+		budgetsByTid[t.tid] = t.budget;
+	}
 
 	const teamSeasons: TeamSeasonWithoutKey[] = [];
 	const teamStats: TeamStatsWithoutKey[] = [];
 
-	let scoutingRank: number | undefined;
+	let scoutingLevel: number | undefined;
 
 	for (let i = 0; i < teams.length; i++) {
 		const t = teams[i];
@@ -648,6 +704,41 @@ const processTeamInfos = ({
 			}
 
 			for (const teamSeason of teamSeasonsLocal) {
+				// Version 55 upgrade
+				// Move the amount to root, no more storing rank
+				for (const type of ["revenues", "expenses"] as const) {
+					if (teamSeason[type]) {
+						for (const key of Object.keys(teamSeason[type])) {
+							const value = (teamSeason[type] as any)[key];
+							if (typeof value !== "number") {
+								(teamSeason[type] as any)[key] = value?.amount ?? 0;
+							}
+						}
+					}
+				}
+				if (!teamSeason.expenseLevels) {
+					// Compute historical expense levels, assuming budget was the same as it is now. In theory could come up wtih a better estimate from expenses, but historical salary cap data is not stored so it wouldn't be perfect, and also who cares
+					const expenseLevelsKeys = [
+						"coaching",
+						"facilities",
+						"health",
+						"scouting",
+					] as const;
+					teamSeason.expenseLevels = {} as any;
+					const gp = helpers.getTeamSeasonGp({
+						// This is needed in case teamSeason is still partial
+						won: teamSeason.won ?? 0,
+						lost: teamSeason.lost ?? 0,
+						tied: teamSeason.tied ?? 0,
+						otl: teamSeason.otl ?? 0,
+					});
+					for (const key of expenseLevelsKeys) {
+						// Careful, teamSeason.tid might not be defined for imported leagues yet!
+						teamSeason.expenseLevels[key] =
+							gp * (budgetsByTid[t.tid]?.[key] ?? DEFAULT_LEVEL);
+					}
+				}
+
 				// See similar code in teamsPlus
 				const copyFromTeamIfUndefined = [
 					// For upgrades, or manually edited league files
@@ -657,7 +748,6 @@ const processTeamInfos = ({
 					"name",
 					"abbrev",
 					"imgURL",
-					"imgURLSmall",
 					"colors",
 					"jersey",
 
@@ -673,7 +763,6 @@ const processTeamInfos = ({
 				}
 
 				const defaultZero = [
-					"gp",
 					"gpHome",
 					"att",
 					"won",
@@ -732,71 +821,34 @@ const processTeamInfos = ({
 						money: 0,
 					};
 				}
-				if (
-					teamSeason.revenues === undefined ||
-					teamSeason.expenses === undefined
-				) {
-					const defaultRank = (teams.filter(t => !t.disabled).length + 1) / 2;
-					if (teamSeason.revenues === undefined) {
-						teamSeason.revenues = {
-							luxuryTaxShare: {
-								amount: 0,
-								rank: defaultRank,
-							},
-							merch: {
-								amount: 0,
-								rank: defaultRank,
-							},
-							sponsor: {
-								amount: 0,
-								rank: defaultRank,
-							},
-							ticket: {
-								amount: 0,
-								rank: defaultRank,
-							},
-							nationalTv: {
-								amount: 0,
-								rank: defaultRank,
-							},
-							localTv: {
-								amount: 0,
-								rank: defaultRank,
-							},
-						};
-					}
-					if (teamSeason.expenses === undefined) {
-						teamSeason.expenses = {
-							salary: {
-								amount: 0,
-								rank: defaultRank,
-							},
-							luxuryTax: {
-								amount: 0,
-								rank: defaultRank,
-							},
-							minTax: {
-								amount: 0,
-								rank: defaultRank,
-							},
-							scouting: {
-								amount: 0,
-								rank: defaultRank,
-							},
-							coaching: {
-								amount: 0,
-								rank: defaultRank,
-							},
-							health: {
-								amount: 0,
-								rank: defaultRank,
-							},
-							facilities: {
-								amount: 0,
-								rank: defaultRank,
-							},
-						};
-					}
+				if (teamSeason.revenues === undefined) {
+					teamSeason.revenues = {
+						luxuryTaxShare: 0,
+						merch: 0,
+						sponsor: 0,
+						ticket: 0,
+						nationalTv: 0,
+						localTv: 0,
+					};
+				}
+				if (teamSeason.expenses === undefined) {
+					teamSeason.expenses = {
+						salary: 0,
+						luxuryTax: 0,
+						minTax: 0,
+						scouting: 0,
+						coaching: 0,
+						health: 0,
+						facilities: 0,
+					};
+				}
+				if (teamSeason.expenseLevels === undefined) {
+					teamSeason.expenseLevels = {
+						scouting: 0,
+						coaching: 0,
+						health: 0,
+						facilities: 0,
+					};
 				}
 			}
 		} else if (!t.disabled) {
@@ -844,22 +896,21 @@ const processTeamInfos = ({
 			teamStats.push(ts);
 		}
 
-		// Save scoutingRank for later
+		// Save scoutingLevel for later
 		if (i === userTid) {
-			scoutingRank = finances.getRankLastThree(
-				teamSeasonsLocal,
-				"expenses",
-				"scouting",
-			);
+			scoutingLevel = await finances.getLevelLastThree("scouting", {
+				t,
+				teamSeasons: teamSeasonsLocal,
+			});
 		}
 	}
 
-	if (scoutingRank === undefined) {
-		throw new Error("scoutingRank should be defined");
+	if (scoutingLevel === undefined) {
+		throw new Error("scoutingLevel should be defined");
 	}
 
 	return {
-		scoutingRank,
+		scoutingLevel,
 		teams,
 		teamSeasons,
 		teamStats,
@@ -1103,12 +1154,13 @@ const beforeDBStream = async ({
 	Object.assign(g, gameAttributes);
 
 	// Needs to be done after g is set
-	const { scoutingRank, teams, teamSeasons, teamStats } = processTeamInfos({
-		realTeamInfo,
-		season: gameAttributes.season,
-		teamInfos,
-		userTid: tid,
-	});
+	const { scoutingLevel, teams, teamSeasons, teamStats } =
+		await processTeamInfos({
+			gameAttributes,
+			realTeamInfo,
+			teamInfos,
+			userTid: tid,
+		});
 
 	// Update after applying real team info
 	if (realTeamInfo) {
@@ -1139,7 +1191,7 @@ const beforeDBStream = async ({
 		realPlayerPhotos,
 		realTeamInfo,
 		repeatSeason,
-		scoutingRank,
+		scoutingLevel,
 		teamInfos,
 		teamSeasons,
 		teamStats,
@@ -1167,16 +1219,7 @@ const adjustSeasonPlayer = (p: Partial<PlayerWithoutKey>) => {
 		p.born!.year += diff;
 
 		if (p.draft) {
-			p.draft = {
-				year: p.draft.year + diff,
-				tid: -1,
-				originalTid: -1,
-				round: 0,
-				pick: 0,
-				ovr: p.draft.ovr,
-				pot: p.draft.pot,
-				skills: p.draft.skills,
-			};
+			p.draft.year += diff;
 		}
 	}
 };
@@ -1193,7 +1236,7 @@ const afterDBStream = async ({
 	randomization,
 	realPlayerPhotos,
 	repeatSeason,
-	scoutingRank,
+	scoutingLevel,
 	shuffleRosters,
 	teamInfos,
 	teamSeasons,
@@ -1214,7 +1257,7 @@ const afterDBStream = async ({
 		| "activeTids"
 		| "gameAttributes"
 		| "repeatSeason"
-		| "scoutingRank"
+		| "scoutingLevel"
 		| "teamInfos"
 		| "teamSeasons"
 		| "teamStats"
@@ -1259,13 +1302,15 @@ const afterDBStream = async ({
 		? extraFromStream.activePlayers
 		: await createRandomPlayers({
 				activeTids,
-				scoutingRank,
+				scoutingLevel,
 				teams,
-		  });
+			});
 
 	// If players are specified for some team on import (from CustomizeTeams), replace the randomly generated players
 	const replaceTids = new Set();
 	const extraActivePlayers: PlayerWithoutKey[] = [];
+	const draftPickAutoContract = g.get("draftPickAutoContract");
+	const rookieSalaries = draftPickAutoContract ? draft.getRookieSalaries() : [];
 	for (const t of teamInfos) {
 		if (t.usePlayers && t.players) {
 			replaceTids.add(t.tid);
@@ -1287,9 +1332,35 @@ const afterDBStream = async ({
 					hasRookieContracts,
 					noStartingInjuries,
 					realPlayerPhotos,
-					scoutingRank,
-					version: MAX_SUPPORTED_LEAGUE_VERSION,
+					scoutingLevel,
+					version: LEAGUE_DATABASE_VERSION,
 				});
+
+				// This may not be ideal for a season before the rookie contract scale existed, but whatever
+				if ((p2 as any).rookieContract && draftPickAutoContract) {
+					const pickIndex =
+						(p2.draft.round - 1) * g.get("numActiveTeams") + p2.draft.pick - 1;
+					player.setContract(
+						p2,
+						{
+							amount: rookieSalaries[pickIndex] ?? rookieSalaries.at(-1),
+							exp: p2.contract.exp,
+						},
+						true,
+					);
+					p2.contract.rookie = true;
+				}
+
+				// Do this after processPlayerNewLeague so it can impute rookie contract status based on draft round
+				if (p2.draft) {
+					p2.draft = {
+						...p2.draft,
+						tid: -1,
+						originalTid: -1,
+						round: 0,
+						pick: 0,
+					};
+				}
 
 				extraActivePlayers.push(p2);
 			}
@@ -1300,7 +1371,12 @@ const afterDBStream = async ({
 		activePlayers.push(...extraActivePlayers);
 	}
 
-	if (randomization === "debuts" || randomization === "debutsForever") {
+	if (
+		randomization === "debuts" ||
+		randomization === "debutsKeepCurrent" ||
+		randomization === "debutsForever" ||
+		randomization === "debutsForeverKeepCurrent"
+	) {
 		const basketball = await loadDataBasketball();
 
 		const draftProspects = await initRandomDebutsForRandomPlayersLeague({
@@ -1318,8 +1394,8 @@ const afterDBStream = async ({
 				hasRookieContracts,
 				noStartingInjuries,
 				realPlayerPhotos,
-				scoutingRank,
-				version: MAX_SUPPORTED_LEAGUE_VERSION,
+				scoutingLevel,
+				version: LEAGUE_DATABASE_VERSION,
 			});
 			activePlayers.push(p2);
 		}
@@ -1348,7 +1424,7 @@ const afterDBStream = async ({
 
 	await addDraftProspects({
 		players: activePlayers,
-		scoutingRank,
+		scoutingLevel,
 	});
 
 	// Unless we got strategy from a league file, calculate it here
@@ -1409,8 +1485,9 @@ const afterDBStream = async ({
 	});
 
 	// Handle repeatSeason after creating league, so we know what random players were created
-	if (repeatSeason && g.get("repeatSeason") === undefined) {
-		await initRepeatSeason();
+	const currentRepeatSeasonType = g.get("repeatSeason")?.type ?? "disabled";
+	if (repeatSeason !== currentRepeatSeasonType) {
+		await setRepeatSeason(repeatSeason);
 	}
 
 	const skipNewPhase = fromFile.gameAttributes?.phase !== undefined;
@@ -1454,11 +1531,10 @@ const afterDBStream = async ({
 		const teams = await idb.cache.teams.getAll();
 		for (const t of teams) {
 			if (!t.disabled && t.autoTicketPrice !== false) {
-				t.budget.ticketPrice.amount = await getAutoTicketPriceByTid(t.tid);
+				t.budget.ticketPrice = await getAutoTicketPriceByTid(t.tid);
 			}
 		}
 	}
-	await finances.updateRanks(["budget"]);
 
 	// Set numDraftPicksCurrent, for upgrading leagues
 	if (g.get("phase") === PHASE.DRAFT) {
@@ -1544,7 +1620,7 @@ const createStream = async (
 		realPlayerPhotos,
 		realTeamInfo,
 		repeatSeason,
-		scoutingRank,
+		scoutingLevel,
 		teamInfos,
 		teamSeasons,
 		teamStats,
@@ -1575,7 +1651,7 @@ const createStream = async (
 			noStartingInjuries,
 			realPlayerPhotos,
 			realTeamInfo,
-			scoutingRank,
+			scoutingLevel,
 			version: fromFile.version,
 		},
 		setLeagueCreationStatus,
@@ -1599,7 +1675,7 @@ const createStream = async (
 		randomization: settings.randomization,
 		realPlayerPhotos,
 		repeatSeason,
-		scoutingRank,
+		scoutingLevel,
 		shuffleRosters,
 		teamInfos,
 		teamSeasons,

@@ -8,15 +8,11 @@ import type {
 	PlayerWithoutKey,
 	Player,
 } from "../../common/types";
-import orderBy from "lodash-es/orderBy";
+import { orderBy } from "../../common/utils";
 
 export const formatPlayerRelativesList = (p: Player) => {
-	let firstSeason;
-	let lastSeason;
-	if (p.stats.length > 0) {
-		firstSeason = p.stats[0].season;
-		lastSeason = p.stats.at(-1)!.season;
-	}
+	const firstSeason = p.ratings[0].season as number;
+	const lastSeason = p.ratings.at(-1)!.season as number;
 
 	return {
 		pid: p.pid,
@@ -35,22 +31,7 @@ export const finalizePlayersRelativesList = (
 		"firstName",
 		"firstSeason",
 		"lastSeason",
-	]).map(p => {
-		let name = p.firstName;
-		if (p.lastName) {
-			name += ` ${p.lastName}`;
-		}
-		if (p.firstSeason !== undefined && p.lastSeason !== undefined) {
-			if (p.firstSeason !== p.lastSeason) {
-				name += ` (${p.firstSeason}-${p.lastSeason})`;
-			}
-		}
-
-		return {
-			pid: p.pid,
-			name,
-		};
-	});
+	]);
 };
 
 const updateCustomizePlayer = async (
@@ -81,18 +62,9 @@ const updateCustomizePlayer = async (
 		let p: PlayerWithoutKey;
 		if (inputs.pid === null) {
 			// Generate new player as basis
-			const teamSeasons = await idb.cache.teamSeasons.indexGetAll(
-				"teamSeasonsByTidSeason",
-				[
-					[g.get("userTid"), g.get("season") - 2],
-					[g.get("userTid"), g.get("season")],
-				],
-			);
-			const scoutingRank = finances.getRankLastThree(
-				teamSeasons,
-				"expenses",
-				"scouting",
-			);
+			const scoutingLevel = await finances.getLevelLastThree("scouting", {
+				tid: g.get("userTid"),
+			});
 			const name = await player.name();
 			p = player.generate(
 				PLAYER.FREE_AGENT,
@@ -101,7 +73,7 @@ const updateCustomizePlayer = async (
 					? g.get("season") - 1
 					: g.get("season"),
 				false,
-				scoutingRank,
+				scoutingLevel,
 				name,
 			);
 			appearanceOption = "Cartoon Face";

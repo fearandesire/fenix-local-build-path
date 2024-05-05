@@ -9,6 +9,7 @@ const updatePlayers = async (
 	state: any,
 ) => {
 	if (
+		updateEvents.includes("firstRun") ||
 		updateEvents.includes("gameSim") ||
 		inputs.abbrev !== state.abbrev ||
 		inputs.season !== state.season
@@ -64,12 +65,6 @@ const updatePlayers = async (
 				}
 			}
 
-			const pts = feat.score.split("-").map(x => parseInt(x));
-			let diff = -Infinity;
-			if (!Number.isNaN(pts[0]) && !Number.isNaN(pts[1])) {
-				diff = pts[0] - pts[1];
-			}
-
 			const overtimeText = helpers.overtimeText(
 				feat.overtimes,
 				feat.numPeriods,
@@ -92,7 +87,6 @@ const updatePlayers = async (
 				abbrev: g.get("teamInfoCache")[feat.tid]?.abbrev,
 				oppAbbrev: g.get("teamInfoCache")[feat.oppTid]?.abbrev,
 				type,
-				diff,
 			};
 		});
 

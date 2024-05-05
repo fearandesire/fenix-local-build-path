@@ -7,11 +7,7 @@ import {
 	type MouseEvent,
 } from "react";
 import { ProgressBarText } from ".";
-import {
-	MAX_SUPPORTED_LEAGUE_VERSION,
-	GAME_NAME,
-	WEBSITE_ROOT,
-} from "../../common";
+import { LEAGUE_DATABASE_VERSION, GAME_NAME, WEBSITE_ROOT } from "../../common";
 import type { BasicInfo } from "../../worker/api/leagueFileUpload";
 import {
 	localActions,
@@ -19,6 +15,7 @@ import {
 	toWorker,
 	useLocalPartial,
 } from "../util";
+import simpleGameAttributesUpgrade from "../../common/simpleGameAttributesUpgrade";
 
 const ErrorMessage = ({ error }: { error: Error | null }) => {
 	if (!error || !error.message) {
@@ -158,15 +155,20 @@ const LeagueFileUpload = ({
 			});
 		}
 
+		// Handle whatever upgrades we can ASAP, so CustomizeSettings in a new league has the best chance to work (and other stuff too)
+		if (basicInfo?.gameAttributes) {
+			simpleGameAttributesUpgrade(basicInfo.gameAttributes, basicInfo.version);
+		}
+
 		if (
 			basicInfo &&
 			typeof (basicInfo as any).version === "number" &&
-			(basicInfo as any).version > MAX_SUPPORTED_LEAGUE_VERSION
+			(basicInfo as any).version > LEAGUE_DATABASE_VERSION
 		) {
 			const error = new Error(
 				`This league file is a newer format (version ${
 					(basicInfo as any).version
-				}) than is supported by your version of ${GAME_NAME} (version ${MAX_SUPPORTED_LEAGUE_VERSION}).`,
+				}) than is supported by your version of ${GAME_NAME} (version ${LEAGUE_DATABASE_VERSION}).`,
 			);
 			(error as any).version = true;
 

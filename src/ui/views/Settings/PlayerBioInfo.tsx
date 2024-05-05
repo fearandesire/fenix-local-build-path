@@ -13,8 +13,7 @@ import {
 import { godModeRequiredMessage } from "./SettingsFormOptions";
 import type { initDefaults } from "../../../worker/util/loadNames";
 import { getFrequencies, mergeCountries } from "../../../common/names";
-import isEqual from "lodash-es/isEqual";
-import orderBy from "lodash-es/orderBy";
+import isEqual from "fast-deep-equal";
 import {
 	CollegesEditor,
 	FlagEditor,
@@ -23,6 +22,7 @@ import {
 } from "./PlayerBioInfoEditors";
 import { CountriesEditor } from "./PlayerBioInfoCountries";
 import Modal from "../../components/Modal";
+import { orderBy } from "../../../common/utils";
 
 export type Defaults = Awaited<ReturnType<typeof initDefaults>>;
 
@@ -38,9 +38,11 @@ export const objectToArray = <T extends string>(
 				({
 					[key]: name,
 					frequency: String(frequency),
-				} as Record<T | "frequency", string>),
+				}) as Record<T | "frequency", string>,
 		),
-		sortKey === "frequency" ? row => parseInt(row.frequency) : sortKey,
+		sortKey === "frequency"
+			? (row: any) => parseInt(row.frequency)
+			: (sortKey as any),
 		order,
 	);
 
@@ -50,7 +52,7 @@ export const arrayToObject = <T extends string>(
 ): Record<string, number> => {
 	const output: Record<string, number> = {};
 	for (const row of array) {
-		output[row[key]] = parseFloat(row.frequency);
+		output[row[key]] = helpers.localeParseFloat(row.frequency);
 	}
 
 	return output;
@@ -269,7 +271,9 @@ export const parseAndValidate = (state: PlayerBioInfoState) => {
 	const output: Required<PlayerBioInfo> = {
 		default: {
 			colleges: arrayToObject(state.defaultColleges, "name"),
-			fractionSkipCollege: parseFloat(state.defaultFractionSkipCollege),
+			fractionSkipCollege: helpers.localeParseFloat(
+				state.defaultFractionSkipCollege,
+			),
 			races: arrayToObject(state.defaultRaces, "race"),
 		},
 		countries: {},
@@ -283,7 +287,7 @@ export const parseAndValidate = (state: PlayerBioInfoState) => {
 			);
 		}
 
-		const frequency = parseFloat(row.frequency);
+		const frequency = helpers.localeParseFloat(row.frequency);
 		if (Number.isNaN(frequency)) {
 			throw new Error(
 				`Invalid frequency "${row.frequency}" for country "${row.country}"`,
@@ -303,7 +307,9 @@ export const parseAndValidate = (state: PlayerBioInfoState) => {
 		}
 		country.colleges = arrayToObject(row.colleges, "name");
 		if (row.fractionSkipCollege !== "") {
-			country.fractionSkipCollege = parseFloat(row.fractionSkipCollege);
+			country.fractionSkipCollege = helpers.localeParseFloat(
+				row.fractionSkipCollege,
+			);
 		}
 		country.races = arrayToObject(row.races, "race");
 		if (row.flag !== undefined) {

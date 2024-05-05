@@ -7,19 +7,23 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	type ReactNode,
+	memo,
 } from "react";
 import {
 	BoxScoreRow,
 	BoxScoreWrapper,
 	Confetti,
 	PlayPauseNext,
+	TeamLogoInline,
 } from "../components";
 import useTitleBar from "../hooks/useTitleBar";
 import { helpers, processLiveGameEvents, toWorker } from "../util";
 import type { View } from "../../common/types";
 import { bySport, getPeriodName, isSport } from "../../common";
 import useLocalStorageState from "use-local-storage-state";
-import type { SportState } from "../util/processLiveGameEvents.baseball";
+import { DEFAULT_SPORT_STATE as DEFAULT_SPORT_STATE_BASEBALL } from "../util/processLiveGameEvents.baseball";
+import { DEFAULT_SPORT_STATE as DEFAULT_SPORT_STATE_FOOTBALL } from "../util/processLiveGameEvents.football";
 import { HeadlineScore } from "../components/BoxScoreWrapper";
 
 type PlayerRowProps = {
@@ -28,6 +32,7 @@ type PlayerRowProps = {
 	i: number;
 	liveGameInProgress?: boolean;
 	p: any;
+	season: number;
 };
 
 class PlayerRow extends Component<PlayerRowProps> {
@@ -85,27 +90,169 @@ const getSeconds = (time: string | undefined) => {
 	}
 
 	const parts = time.split(":").map(x => parseInt(x));
-	if (parts.length < 2) {
+	if (parts.length === 0) {
 		return 0;
+	}
+	if (parts.length === 1) {
+		// Seconds only being displayed
+		return parseFloat(time);
 	}
 	const [min, sec] = parts;
 	return min * 60 + sec;
 };
 
-export const DEFAULT_SPORT_STATE = isSport("baseball")
-	? ({
-			bases: [undefined, undefined, undefined] as [
-				number | undefined,
-				number | undefined,
-				number | undefined,
-			],
-			outs: 0,
-			balls: 0,
-			strikes: 0,
-			batterPid: -1,
-			pitcherPid: -1,
-	  } as SportState)
-	: undefined;
+const DEFAULT_SPORT_STATE = bySport<any>({
+	baseball: DEFAULT_SPORT_STATE_BASEBALL,
+	basketball: undefined,
+	football: DEFAULT_SPORT_STATE_FOOTBALL,
+	hockey: undefined,
+});
+
+type PlayByPlayEntryInfo = {
+	key: number;
+	score: ReactNode | undefined;
+	scoreDiff: number;
+	scoreType: string | undefined;
+	outs: number | undefined;
+	t: 0 | 1 | undefined;
+	text: ReactNode;
+	textOnly: boolean;
+	time: string;
+};
+
+const PlayByPlayEntry = memo(
+	({ boxScore, entry }: { boxScore: any; entry: PlayByPlayEntryInfo }) => {
+		let scoreBlock = null;
+		if (entry.score) {
+			if (isSport("basketball")) {
+				scoreBlock = entry.score;
+			} else {
+				scoreBlock = (
+					<>
+						<span
+							className={`fw-bold ${
+								entry.scoreDiff >= 0 &&
+								(!isSport("football") || entry.scoreType !== "Safety")
+									? "text-success"
+									: "text-danger"
+							}`}
+						>
+							{bySport({
+								baseball: boxScore.shootout
+									? "Home run!"
+									: `${entry.scoreDiff} ${helpers.plural(
+											"run scores",
+											entry.scoreDiff,
+											"runs score",
+										)}!`,
+								basketball: "",
+								football: boxScore.shootout
+									? "It's good!"
+									: `${entry.scoreType ?? "???"}!`,
+								hockey: "Goal!",
+							})}
+						</span>{" "}
+						{entry.score}
+					</>
+				);
+			}
+		}
+
+		return (
+			<div className="d-flex">
+				{entry.t !== undefined ? (
+					<TeamLogoInline
+						alt={boxScore.teams[entry.t].abbrev}
+						className={classNames("flex-shrink-0", {
+							// If there is a time line, then add some margin to the top, looks better.
+							// If it's just score and no time, then that's football, and no margin looks more consistent. So don't check score here.
+							"mt-1": !entry.textOnly && entry.time,
+						})}
+						imgURL={boxScore.teams[entry.t].imgURL}
+						imgURLSmall={boxScore.teams[entry.t].imgURLSmall}
+						includePlaceholderIfNoLogo
+						size={24}
+					/>
+				) : null}
+				<div
+					className={classNames(
+						"flex-grow-1 align-self-center me-2",
+						entry.textOnly ? "fw-bold" : undefined,
+						entry.t !== undefined ? "ms-2" : undefined,
+					)}
+				>
+					{!entry.textOnly ? (
+						<div className="d-flex">
+							{entry.time ? (
+								<div className="text-body-secondary me-auto">{entry.time}</div>
+							) : null}
+							{isSport("basketball") ? scoreBlock : null}
+						</div>
+					) : null}
+					{isSport("hockey") ? scoreBlock : null}
+					{entry.text}
+					{!isSport("basketball") && !isSport("hockey") ? (
+						<div>{scoreBlock}</div>
+					) : null}
+					{entry.outs !== undefined ? (
+						<div className="fw-bold text-danger">
+							{entry.outs} {helpers.plural("out", entry.outs)}
+						</div>
+					) : null}
+				</div>
+			</div>
+		);
+	},
+	() => true,
+);
+
+const PlayByPlay = ({
+	boxScore,
+	entries,
+	playByPlayDivRef,
+}: {
+	boxScore: any;
+	entries: PlayByPlayEntryInfo[];
+	playByPlayDivRef: React.MutableRefObject<HTMLDivElement | null>;
+}) => {
+	useEffect(() => {
+		const setPlayByPlayDivHeight = () => {
+			if (playByPlayDivRef.current) {
+				// Keep in sync with .live-game-affix
+				if (window.matchMedia("(min-width:768px)").matches) {
+					playByPlayDivRef.current.style.height = `${
+						window.innerHeight - 113
+					}px`;
+				} else if (playByPlayDivRef.current.style.height !== "") {
+					playByPlayDivRef.current.style.removeProperty("height");
+				}
+			}
+		};
+
+		// Keep height of plays list equal to window
+		setPlayByPlayDivHeight();
+		window.addEventListener("optimizedResize", setPlayByPlayDivHeight);
+
+		return () => {
+			window.removeEventListener("optimizedResize", setPlayByPlayDivHeight);
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
+	return (
+		<div
+			className="live-game-playbyplay d-flex flex-column gap-3"
+			ref={playByPlayDivRef}
+			style={{
+				scrollMarginTop: 174,
+			}}
+		>
+			{entries.map(entry => (
+				<PlayByPlayEntry key={entry.key} boxScore={boxScore} entry={entry} />
+			))}
+		</div>
+	);
+};
 
 export const LiveGame = (props: View<"liveGame">) => {
 	const [paused, setPaused] = useState(false);
@@ -137,23 +284,28 @@ export const LiveGame = (props: View<"liveGame">) => {
 		DEFAULT_SPORT_STATE ? { ...DEFAULT_SPORT_STATE } : undefined,
 	);
 
+	const playByPlayEntries = useRef<PlayByPlayEntryInfo[]>([]);
+
 	// Make sure to call setPlayIndex after calling this! Can't be done inside because React is not always smart enough to batch renders
 	const processToNextPause = useCallback(
 		(force?: boolean): number => {
-			if (!componentIsMounted.current || (pausedRef.current && !force)) {
+			if (
+				!componentIsMounted.current ||
+				(pausedRef.current && !force) ||
+				!events.current
+			) {
 				return 0;
 			}
 
 			const startSeconds = getSeconds(boxScore.current.time);
 
-			if (!events.current) {
-				throw new Error("events.current is undefined");
-			}
+			const shootout = !!boxScore.current.shootout;
+			const ptsKey = shootout ? "sPts" : "pts";
 
 			// Save here since it is mutated in processLiveGameEvents
 			const prevOuts = sportState.current?.outs;
 			const prevPts =
-				boxScore.current.teams[0].pts + boxScore.current.teams[1].pts;
+				boxScore.current.teams[0][ptsKey] + boxScore.current.teams[1][ptsKey];
 
 			const output = processLiveGameEvents({
 				boxScore: boxScore.current,
@@ -162,12 +314,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 				quarters: quarters.current,
 				sportState: sportState.current,
 			});
-			let text = output.text;
-			const showOuts =
-				isSport("baseball") && output.sportState.outs > prevOuts!;
+			const text = output.text;
 			const currentPts =
-				boxScore.current.teams[0].pts + boxScore.current.teams[1].pts;
-			const showScore = isSport("baseball") && currentPts !== prevPts;
+				boxScore.current.teams[0][ptsKey] + boxScore.current.teams[1][ptsKey];
+			const scoreDiff = currentPts - prevPts;
 
 			overtimes.current = output.overtimes;
 			quarters.current = output.quarters;
@@ -175,95 +325,100 @@ export const LiveGame = (props: View<"liveGame">) => {
 			sportState.current = output.sportState;
 
 			if (text !== undefined) {
-				if (isSport("baseball")) {
-					if (showOuts) {
-						let endWithPeriod = true;
-						if (!text.endsWith("!") && !text.endsWith(".")) {
-							text += ",";
-							endWithPeriod = false;
-						}
+				let outs;
+				if (isSport("baseball") && output.sportState.outs > prevOuts) {
+					outs = output.sportState.outs;
+				}
 
-						const outs = output.sportState.outs;
+				// For baseball, always show logo of the batting team, since t is not always sent in output (or maybe never sent)
+				const t = isSport("baseball") ? sportState.current.o : output.t;
 
-						text += ` ${outs} out${outs === 1 ? "" : "s"}${
-							endWithPeriod ? "." : ""
-						}`;
-					}
+				let score;
+				let scoreType;
+				if (scoreDiff !== 0) {
+					// Swap team for safety
+					const scoreT =
+						isSport("football") &&
+						sportState.current.plays.at(-1)?.scoreInfo?.type === "SF"
+							? t === 0
+								? 1
+								: 0
+							: t;
 
-					if (showScore) {
-						if (!text.endsWith("!") && !text.endsWith(".")) {
-							text += ",";
-						}
+					score =
+						scoreT === 0 ? (
+							<>
+								<b>{boxScore.current.teams[0][ptsKey]}</b>-
+								<span className="text-body-secondary">
+									{boxScore.current.teams[1][ptsKey]}
+								</span>
+							</>
+						) : scoreT === 1 ? (
+							<>
+								<span className="text-body-secondary">
+									{boxScore.current.teams[0][ptsKey]}
+								</span>
+								-<b>{boxScore.current.teams[1][ptsKey]}</b>
+							</>
+						) : undefined;
 
-						const tied =
-							boxScore.current.teams[0].pts === boxScore.current.teams[1].pts;
-						const leader =
-							boxScore.current.teams[0].pts > boxScore.current.teams[1].pts
-								? 0
-								: 1;
-						const other = leader === 0 ? 1 : 0;
-
-						if (tied) {
-							text += " The game is tied ";
-						} else {
-							text += ` ${boxScore.current.teams[leader].abbrev} leads `;
-						}
-
-						text += `${boxScore.current.teams[leader].pts}-${boxScore.current.teams[other].pts}.`;
+					if (isSport("football")) {
+						// If no score type, then it must be a penalty overturning a score
+						scoreType =
+							sportState.current.plays.at(-1)?.scoreInfo?.long ??
+							"Penalty overturned score";
 					}
 				}
 
-				const p = document.createElement("p");
-				if (isSport("football") && text.startsWith("Penalty")) {
-					p.innerHTML = text
-						.replace("accepted", "<b>accepted</b>")
-						.replace("declined", "<b>declined</b>")
-						.replace("enforced", "<b>enforced</b>")
-						.replace("overruled", "<b>overruled</b>")
-						.replace("ABBREV0", boxScore.current.teams[1].abbrev)
-						.replace("ABBREV1", boxScore.current.teams[0].abbrev);
-				} else {
-					const node = document.createTextNode(text);
-					if (
-						text === "End of game" ||
-						text.startsWith("Start of") ||
-						(isSport("basketball") &&
-							text.startsWith("Elam Ending activated! First team to")) ||
-						(isSport("hockey") &&
-							(text.includes("Goal!") || text.includes("penalty"))) ||
-						output.bold
+				let time;
+				// Baseball has no time, football it's displayed with down/distance before play. In both cases, skip showing time for individual entries.
+				if (
+					bySport({
+						baseball: false,
+						basketball: true,
+						football: false,
+						hockey: true,
+					})
+				) {
+					if (shootout && t !== undefined) {
+						time = `Attempt ${boxScore.current.teams[t].sAtt}`;
+					} else if (
+						isSport("basketball") &&
+						boxScore.current.elamTarget !== undefined
 					) {
-						const b = document.createElement("b");
-						b.appendChild(node);
-						p.appendChild(b);
+						time = `Target: ${boxScore.current.elamTarget}`;
 					} else {
-						p.appendChild(node);
+						time = boxScore.current.time;
 					}
 				}
 
-				if (playByPlayDiv.current) {
-					playByPlayDiv.current.insertBefore(
-						p,
-						playByPlayDiv.current.firstChild,
-					);
-				}
+				playByPlayEntries.current.unshift({
+					key: playByPlayEntries.current.length,
+					score,
+					scoreDiff,
+					scoreType,
+					outs,
+					text,
+					textOnly: output.textOnly,
+					t,
+					time,
+				});
 			}
 
 			if (events.current && events.current.length > 0) {
 				if (!pausedRef.current) {
-					setTimeout(() => {
-						processToNextPause();
-						setPlayIndex(prev => prev + 1);
-					}, 4000 / 1.2 ** speedRef.current);
+					setTimeout(
+						() => {
+							processToNextPause();
+							setPlayIndex(prev => prev + 1);
+						},
+						4000 / 1.2 ** speedRef.current,
+					);
 				}
 			} else {
 				boxScore.current.time = "0:00";
 				boxScore.current.gameOver = true;
-				if (boxScore.current.scoringSummary) {
-					for (const event of boxScore.current.scoringSummary) {
-						event.hide = false;
-					}
-				}
+				boxScore.current.possession = undefined;
 
 				// Update team records with result of game
 				// Keep in sync with liveGame.ts
@@ -285,7 +440,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 								}
 							}
 						} else {
-							if (boxScore.current.won.pts === boxScore.current.lost.pts) {
+							if (
+								boxScore.current.won.pts === boxScore.current.lost.pts &&
+								boxScore.current.won.sPts === boxScore.current.lost.sPts
+							) {
 								// Tied!
 								if (t.tied !== undefined) {
 									t.tied += 1;
@@ -318,24 +476,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 	useEffect(() => {
 		componentIsMounted.current = true;
 
-		const setPlayByPlayDivHeight = () => {
-			if (playByPlayDiv.current) {
-				// Keep in sync with .live-game-affix
-				if (window.matchMedia("(min-width:768px)").matches) {
-					playByPlayDiv.current.style.height = `${window.innerHeight - 113}px`;
-				} else if (playByPlayDiv.current.style.height !== "") {
-					playByPlayDiv.current.style.removeProperty("height");
-				}
-			}
-		};
-
-		// Keep height of plays list equal to window
-		setPlayByPlayDivHeight();
-		window.addEventListener("optimizedResize", setPlayByPlayDivHeight);
-
 		return () => {
 			componentIsMounted.current = false;
-			window.removeEventListener("optimizedResize", setPlayByPlayDivHeight);
 			updatePhaseAndLeagueTopBar();
 		};
 	}, []);
@@ -390,7 +532,15 @@ export const LiveGame = (props: View<"liveGame">) => {
 		const playSeconds = (cutoff: number) => {
 			let seconds = 0;
 			let numPlays = 0;
-			while (seconds < cutoff && !boxScore.current.gameOver) {
+
+			// Stop at shootout, unless we're already in a shootout
+			const initialShootout = boxScore.current.shootout;
+
+			while (
+				seconds < cutoff &&
+				!boxScore.current.gameOver &&
+				(initialShootout || !boxScore.current.shootout)
+			) {
 				const elapsedSeconds = processToNextPause(true);
 				numPlays += 1;
 				if (elapsedSeconds > 0) {
@@ -404,10 +554,13 @@ export const LiveGame = (props: View<"liveGame">) => {
 		};
 
 		const playUntilLastTwoMinutes = () => {
+			// quarters.current.length can be 0 early in the game
+			const initialQuarter = Math.max(1, quarters.current.length);
+
 			const quartersToPlay =
-				quarters.current.length >= boxScore.current.numPeriods
+				initialQuarter >= boxScore.current.numPeriods
 					? 0
-					: boxScore.current.numPeriods - quarters.current.length;
+					: boxScore.current.numPeriods - initialQuarter;
 			for (let i = 0; i < quartersToPlay; i++) {
 				playSeconds(Infinity);
 			}
@@ -437,7 +590,11 @@ export const LiveGame = (props: View<"liveGame">) => {
 				boxScore.current.teams[0].pts + boxScore.current.teams[1].pts;
 			let currentPts = initialPts;
 			let numPlays = 0;
-			while (initialPts === currentPts && !boxScore.current.gameOver) {
+			while (
+				initialPts === currentPts &&
+				!boxScore.current.gameOver &&
+				!boxScore.current.shootout
+			) {
 				processToNextPause(true);
 				currentPts =
 					boxScore.current.teams[0].pts + boxScore.current.teams[1].pts;
@@ -466,30 +623,34 @@ export const LiveGame = (props: View<"liveGame">) => {
 			setPlayIndex(prev => prev + numPlays);
 		};
 
-		let skipMinutes = isSport("baseball")
-			? []
-			: [
-					{
-						minutes: 1,
-						key: "O",
-					},
-					{
-						minutes: helpers.bound(
-							Math.round(props.quarterLength / 4),
-							1,
-							Infinity,
-						),
-						key: "T",
-					},
-					{
-						minutes: helpers.bound(
-							Math.round(props.quarterLength / 2),
-							1,
-							Infinity,
-						),
-						key: "S",
-					},
-			  ];
+		// elamTarget check is because clock is set to Infinity in Elam ending, so we can't skip ahead minutes
+		let skipMinutes =
+			isSport("baseball") ||
+			boxScore.current.elamTarget !== undefined ||
+			boxScore.current.shootout
+				? []
+				: [
+						{
+							minutes: 1,
+							key: "O",
+						},
+						{
+							minutes: helpers.bound(
+								Math.round(props.quarterLength / 4),
+								1,
+								Infinity,
+							),
+							key: "T",
+						},
+						{
+							minutes: helpers.bound(
+								Math.round(props.quarterLength / 2),
+								1,
+								Infinity,
+							),
+							key: "S",
+						},
+					];
 
 		// Dedupe
 		const skipMinutesValues = new Set();
@@ -503,159 +664,191 @@ export const LiveGame = (props: View<"liveGame">) => {
 		});
 
 		const getNumSidesSoFar = () =>
-			boxScore.current.teams[0].ptsQtrs.length +
-			boxScore.current.teams[1].ptsQtrs.length;
+			boxScore.current.teams === undefined
+				? 0
+				: boxScore.current.teams[0].ptsQtrs.length +
+					boxScore.current.teams[1].ptsQtrs.length;
 
 		const menuItems = [
 			...skipMinutes.map(({ minutes, key }) => ({
-				label: `${minutes} minute${minutes === 1 ? "" : "s"}`,
+				label: `${minutes} ${helpers.plural("minute", minutes)}`,
 				key,
 				onClick: () => {
 					playSeconds(60 * minutes);
 				},
 			})),
 			...(isSport("baseball")
-				? [
-						{
-							label: "Next batter",
-							key: "O",
-							onClick: () => {
-								let numPlays = 0;
+				? !boxScore.current.shootout
+					? [
+							{
+								label: "Next batter",
+								key: "O",
+								onClick: () => {
+									let numPlays = 0;
 
-								const initialBatter = sportState.current?.batterPid;
-								while (!boxScore.current.gameOver) {
-									processToNextPause(true);
-									numPlays += 1;
+									const initialBatter = sportState.current?.batterPid;
+									while (!boxScore.current.gameOver) {
+										processToNextPause(true);
+										numPlays += 1;
 
-									const currentBatter = sportState.current?.batterPid;
-									if (
-										currentBatter !== undefined &&
-										currentBatter >= 0 &&
-										initialBatter !== currentBatter
-									) {
-										break;
+										const currentBatter = sportState.current?.batterPid;
+										if (
+											currentBatter !== undefined &&
+											currentBatter >= 0 &&
+											initialBatter !== currentBatter
+										) {
+											break;
+										}
 									}
-								}
 
-								setPlayIndex(prev => prev + numPlays);
+									setPlayIndex(prev => prev + numPlays);
+								},
 							},
-						},
-						{
-							label: "Next baserunner",
-							key: "T",
-							onClick: () => {
-								const initialBases = sportState.current?.bases ?? [];
-								const initialBaserunners = new Set(
-									initialBases.filter(pid => pid !== undefined),
-								);
-
-								const initialHR =
-									boxScore.current.teams[0].hr + boxScore.current.teams[1].hr;
-
-								let numPlays = 0;
-
-								while (!boxScore.current.gameOver) {
-									processToNextPause(true);
-									numPlays += 1;
-
-									// Any new baserunner -> stop
-									const baserunners = (sportState.current?.bases ?? []).filter(
-										pid => pid !== undefined,
+							{
+								label: "Next baserunner",
+								key: "T",
+								onClick: () => {
+									const sportStateBaseball =
+										sportState.current as typeof DEFAULT_SPORT_STATE_BASEBALL;
+									const initialBases = sportStateBaseball.bases ?? [];
+									const initialBaserunners = new Set(
+										initialBases.filter(pid => pid !== undefined),
 									);
-									if (baserunners.length === 0) {
-										// Handle case where it's a new inning and the same guy gets on base
-										initialBaserunners.clear();
-									}
-									if (baserunners.some(pid => !initialBaserunners.has(pid))) {
-										break;
-									}
 
-									// Home run counts as new baserunner
-									const currentHR =
+									const initialHR =
 										boxScore.current.teams[0].hr + boxScore.current.teams[1].hr;
-									if (initialHR !== currentHR) {
-										break;
+
+									let numPlays = 0;
+
+									while (!boxScore.current.gameOver) {
+										processToNextPause(true);
+										numPlays += 1;
+
+										// Any new baserunner -> stop
+										const baserunners = (sportStateBaseball.bases ?? []).filter(
+											pid => pid !== undefined,
+										);
+										if (baserunners.length === 0) {
+											// Handle case where it's a new inning and the same guy gets on base
+											initialBaserunners.clear();
+										}
+										if (baserunners.some(pid => !initialBaserunners.has(pid))) {
+											break;
+										}
+
+										// Home run counts as new baserunner
+										const currentHR =
+											boxScore.current.teams[0].hr +
+											boxScore.current.teams[1].hr;
+										if (initialHR !== currentHR) {
+											break;
+										}
 									}
-								}
 
-								setPlayIndex(prev => prev + numPlays);
+									setPlayIndex(prev => prev + numPlays);
+								},
 							},
-						},
-						{
-							label: "Side is retired",
-							key: "C",
-							onClick: () => {
-								let numPlays = 0;
+							{
+								label: "Side is retired",
+								key: "C",
+								onClick: () => {
+									let numPlays = 0;
 
-								const numSidesSoFar = getNumSidesSoFar();
-								while (!boxScore.current.gameOver) {
-									processToNextPause(true);
-									numPlays += 1;
+									const numSidesSoFar = getNumSidesSoFar();
+									while (
+										!boxScore.current.gameOver &&
+										!boxScore.current.shootout
+									) {
+										processToNextPause(true);
+										numPlays += 1;
 
-									if (numSidesSoFar !== getNumSidesSoFar()) {
-										break;
+										if (numSidesSoFar !== getNumSidesSoFar()) {
+											break;
+										}
 									}
-								}
 
-								setPlayIndex(prev => prev + numPlays);
+									setPlayIndex(prev => prev + numPlays);
+								},
 							},
-						},
-						{
-							label: "End of inning",
-							key: "Q",
-							onClick: () => {
-								let numPlays = 0;
+							{
+								label: "End of inning",
+								key: "Q",
+								onClick: () => {
+									let numPlays = 0;
 
-								const numSidesSoFar = getNumSidesSoFar();
-								while (!boxScore.current.gameOver) {
-									processToNextPause(true);
-									numPlays += 1;
+									const numSidesSoFar = getNumSidesSoFar();
+									while (
+										!boxScore.current.gameOver &&
+										!boxScore.current.shootout
+									) {
+										processToNextPause(true);
+										numPlays += 1;
 
-									const newNum = getNumSidesSoFar();
-									if (numSidesSoFar !== newNum && newNum % 2 === 1) {
-										break;
+										const newNum = getNumSidesSoFar();
+										if (numSidesSoFar !== newNum && newNum % 2 === 1) {
+											break;
+										}
 									}
-								}
 
-								setPlayIndex(prev => prev + numPlays);
+									setPlayIndex(prev => prev + numPlays);
+								},
 							},
-						},
-						{
-							label: `${helpers.ordinal(boxScore.current.numPeriods)} inning`,
-							key: "U",
-							onClick: () => {
-								let numPlays = 0;
+							...(getNumSidesSoFar() <= (boxScore.current.numPeriods - 1) * 2
+								? [
+										{
+											label: `${helpers.ordinal(boxScore.current.numPeriods)} inning`,
+											key: "U",
+											onClick: () => {
+												let numPlays = 0;
 
-								while (
-									getNumSidesSoFar() <= (boxScore.current.numPeriods - 1) * 2 &&
-									!boxScore.current.gameOver
-								) {
-									processToNextPause(true);
-									numPlays += 1;
-								}
+												while (
+													getNumSidesSoFar() <=
+														(boxScore.current.numPeriods - 1) * 2 &&
+													!boxScore.current.gameOver
+												) {
+													processToNextPause(true);
+													numPlays += 1;
+												}
 
-								setPlayIndex(prev => prev + numPlays);
+												setPlayIndex(prev => prev + numPlays);
+											},
+										},
+									]
+								: []),
+						]
+					: [
+							{
+								label: "End of shootout",
+								key: "Q",
+								onClick: () => {
+									playSeconds(Infinity);
+								},
 							},
-						},
-				  ]
+						]
 				: [
 						{
 							label: `End of ${
 								boxScore.current.elamTarget !== undefined
 									? "game"
-									: boxScore.current.overtime
-									? "period"
-									: getPeriodName(boxScore.current.numPeriods)
+									: boxScore.current.shootout
+										? "shootout"
+										: boxScore.current.overtime
+											? "period"
+											: getPeriodName(boxScore.current.numPeriods)
 							}`,
 							key: "Q",
 							onClick: () => {
 								playSeconds(Infinity);
 							},
 						},
-				  ]),
+					]),
 		];
 
-		if (!boxScore.current.elam && !isSport("baseball")) {
+		if (
+			!boxScore.current.elam &&
+			!boxScore.current.shootout &&
+			!isSport("baseball")
+		) {
 			menuItems.push({
 				label: "Last 2 minutes",
 				key: "U",
@@ -671,7 +864,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 				basketball: false,
 				football: true,
 				hockey: false,
-			})
+			}) &&
+			!boxScore.current.shootout
 		) {
 			menuItems.push({
 				label: "Change of possession",
@@ -688,7 +882,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 				basketball: false,
 				football: true,
 				hockey: true,
-			})
+			}) &&
+			!boxScore.current.shootout
 		) {
 			menuItems.push({
 				label: `Next ${bySport({
@@ -722,6 +917,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 		boxScore.current.elam,
 		boxScore.current.elamTarget,
 		boxScore.current.overtime,
+		boxScore.current.shootout,
+		quarters.current.length,
 		processToNextPause,
 	]);
 
@@ -761,7 +958,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 							<input
 								type="range"
 								className="form-range flex-grow-1"
-								disabled={boxScore.current.gameOver}
 								min="1"
 								max="33"
 								step="1"
@@ -856,7 +1052,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 							<input
 								type="range"
 								className="form-range flex-grow-1"
-								disabled={boxScore.current.gameOver}
 								min="1"
 								max="33"
 								step="1"
@@ -865,14 +1060,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 								title="Speed"
 							/>
 						</div>
-						<div
-							className="live-game-playbyplay"
-							ref={c => {
-								playByPlayDiv.current = c;
-							}}
-							style={{
-								scrollMarginTop: 174,
-							}}
+						<PlayByPlay
+							boxScore={boxScore.current}
+							entries={playByPlayEntries.current}
+							playByPlayDivRef={playByPlayDiv}
 						/>
 					</div>
 				</div>

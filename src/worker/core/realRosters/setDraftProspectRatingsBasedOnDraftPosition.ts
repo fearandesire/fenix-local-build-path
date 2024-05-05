@@ -10,7 +10,7 @@ N = 1000;
 sums = undefined;
 for (let i = 0; i < N; i++) {
     console.log(i);
-    const players = await bbgm.draft.genPlayersWithoutSaving(0, 15.5, []);
+    const players = await bbgm.draft.genPlayersWithoutSaving(0, 34, []);
     const values = players.map(p => bbgm.player.valueCombineOvrPot(p.ratings[0].ovr, p.ratings[0].pot, -p.born.year)).sort((a, b) => b - a);
     if (sums === undefined) {
         sums = Array(values.length).fill(0);
@@ -19,7 +19,7 @@ for (let i = 0; i < N; i++) {
         sums[j] += values[j] / N;
     }
 }
-console.log(`const VALUE_BY_PICK = ${JSON.stringify(sums.map(sum => parseFloat(sum.toFixed(1))).slice(0, 60))};\nconst VALUE_UNDRAFTED = ${sums[63].toFixed(1)};`);
+console.log(`const VALUE_BY_PICK = ${JSON.stringify(sums.map(sum => helpers.localeParseFloat(sum.toFixed(1))).slice(0, 60))};\nconst VALUE_UNDRAFTED = ${sums[63].toFixed(1)};`);
 */
 const VALUE_BY_PICK = [
 	64.3, 61.7, 60.1, 58.9, 58.1, 57.3, 56.7, 56.1, 55.5, 55.1, 54.7, 54.3, 53.9,

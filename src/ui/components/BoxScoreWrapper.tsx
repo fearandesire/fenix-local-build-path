@@ -1,17 +1,28 @@
 import classNames from "classnames";
-import range from "lodash-es/range";
-import { useCallback, useEffect, useState, useRef } from "react";
-import { isSport, PHASE } from "../../common";
+import {
+	useCallback,
+	useEffect,
+	useState,
+	useRef,
+	type CSSProperties,
+} from "react";
+import { isSport, PHASE, STARTING_NUM_TIMEOUTS } from "../../common";
 import { helpers, realtimeUpdate, toWorker, useLocalPartial } from "../util";
 import BoxScore from "./BoxScore";
+import { range } from "../../common/utils";
+import getWinner from "../../common/getWinner";
 
 const TeamNameLink = ({
 	children,
+	className,
 	season,
+	style,
 	t,
 }: {
 	children: any;
+	className?: string;
 	season: number;
+	style?: CSSProperties;
 	t: {
 		abbrev: string;
 		name: string;
@@ -19,12 +30,20 @@ const TeamNameLink = ({
 		tid: number;
 	};
 }) => {
-	return t.tid >= 0 ? (
-		<a href={helpers.leagueUrl(["roster", `${t.abbrev}_${t.tid}`, season])}>
-			{children}
-		</a>
-	) : (
-		<>{children}</>
+	return (
+		<>
+			{t.tid >= 0 ? (
+				<a
+					href={helpers.leagueUrl(["roster", `${t.abbrev}_${t.tid}`, season])}
+					className={className}
+					style={style}
+				>
+					{children}
+				</a>
+			) : (
+				<>{children}</>
+			)}
+		</>
 	);
 };
 
@@ -43,24 +62,81 @@ const TeamLogo = ({
 		lost: number;
 		tied?: number;
 		otl?: number;
+		timeouts?: number;
 	};
 }) => {
 	return t.imgURL !== undefined && t.imgURL !== "" ? (
 		<div className="w-100 d-none d-lg-flex justify-content-center">
 			<div>
-				<div style={{ height: 100 }} className="d-flex align-items-center">
-					<TeamNameLink season={season} t={t}>
-						<img
-							src={t.imgURL}
-							alt=""
-							style={{ maxWidth: 120, maxHeight: 100 }}
-						/>
-					</TeamNameLink>
-				</div>
+				<TeamNameLink
+					season={season}
+					t={t}
+					className="d-flex align-items-center justify-content-center"
+					style={{ height: 100, width: 120 }}
+				>
+					<img className="mw-100 mh-100" src={t.imgURL} alt="" />
+				</TeamNameLink>
 				<div className="mt-1 mb-3 fw-bold">{helpers.formatRecord(t)}</div>
 			</div>
 		</div>
 	) : null;
+};
+
+const TeamNameAndScore = ({
+	boxScore,
+	possessionNum,
+	small,
+	t,
+}: {
+	boxScore: any;
+	possessionNum: 0 | 1;
+	small: boolean | undefined;
+	t: any;
+}) => {
+	const className = small
+		? "d-none"
+		: `d-none d-${boxScore.exhibition ? "md" : "sm"}-inline`;
+
+	return (
+		<div className="d-flex">
+			{boxScore.possession !== undefined ? (
+				<span
+					className={
+						boxScore.possession === possessionNum
+							? "text-warning"
+							: "text-white"
+					}
+				>
+					●&nbsp;
+				</span>
+			) : null}
+			{t.playoffs ? (
+				<span className="text-body-secondary">{t.playoffs.seed}.&nbsp;</span>
+			) : null}
+			<div>
+				<TeamNameLink season={boxScore.season} t={t}>
+					{t.season !== undefined ? `${t.season} ` : null}
+					<span className={className}>{t.region} </span>
+					{t.name}
+				</TeamNameLink>
+				{t.timeouts !== undefined && STARTING_NUM_TIMEOUTS !== undefined ? (
+					<div
+						className="d-flex gap-1 pt-1"
+						title={`${t.timeouts} ${helpers.plural("timeout", t.timeouts)} remaining`}
+					>
+						{range(STARTING_NUM_TIMEOUTS).map(i => (
+							<div
+								key={i}
+								style={{ width: 12, height: 3 }}
+								className={i < t.timeouts ? "bg-warning" : "bg-tertiary"}
+							/>
+						))}
+					</div>
+				) : null}
+			</div>
+			<div>&nbsp;{t.pts}</div>
+		</div>
+	);
 };
 
 export const HeadlineScore = ({
@@ -79,9 +155,7 @@ export const HeadlineScore = ({
 	const t1 =
 		boxScore.lost?.name !== undefined ? boxScore.lost : boxScore.teams[1];
 
-	const className = small
-		? "d-none"
-		: `d-none d-${boxScore.exhibition ? "md" : "sm"}-inline`;
+	const shootout = t0.sPts !== undefined;
 
 	return (
 		<div
@@ -89,60 +163,62 @@ export const HeadlineScore = ({
 				small
 					? "d-flex align-items-center flex-wrap justify-content-between gap-3 row-gap-0 mb-2"
 					: liveGameSim
-					? "d-none d-md-block"
-					: undefined
+						? "d-none d-md-block"
+						: undefined
 			}
 		>
-			<h2 className={small ? "mb-0" : liveGameSim ? "mb-1" : "mb-2"}>
-				{t0.playoffs ? (
-					<span className="text-body-secondary">{t0.playoffs.seed}. </span>
+			<h2
+				className={`d-flex justify-content-center ${small ? "mb-0" : liveGameSim ? "mb-1" : "mb-2"}`}
+			>
+				<TeamNameAndScore
+					boxScore={boxScore}
+					possessionNum={0}
+					small={small}
+					t={t0}
+				/>
+				<div>,&nbsp;</div>
+				<TeamNameAndScore
+					boxScore={boxScore}
+					possessionNum={1}
+					small={small}
+					t={t1}
+				/>
+				{shootout ? (
+					<div className="text-body-secondary">&nbsp;({t1.sPts})</div>
 				) : null}
-				<TeamNameLink season={boxScore.season} t={t0}>
-					{t0.season !== undefined ? `${t0.season} ` : null}
-					<span className={className}>{t0.region} </span>
-					{t0.name}
-				</TeamNameLink>{" "}
-				{t0.pts},{" "}
-				{t1.playoffs ? (
-					<span className="text-body-secondary">{t1.playoffs.seed}. </span>
-				) : null}
-				<TeamNameLink season={boxScore.season} t={t1}>
-					{t1.season !== undefined ? `${t1.season} ` : null}
-					<span className={className}>{t1.region} </span>
-					{t1.name}
-				</TeamNameLink>{" "}
-				{t1.pts}
-				{boxScore.overtime}
+				{boxScore.overtime ? <div>&nbsp;{boxScore.overtime}</div> : null}
 			</h2>
 			{liveGameSim ? (
 				<div className={small ? undefined : "mb-2"}>
 					<span className="d-none d-sm-inline">
 						{boxScore.gameOver
 							? "Final score"
-							: boxScore.elamTarget !== undefined
-							? `Elam Ending target: ${boxScore.elamTarget} points`
-							: isSport("baseball")
-							? `${
-									boxScore.teams[0].ptsQtrs.length ===
-									boxScore.teams[1].ptsQtrs.length
-										? "Bottom"
-										: "Top"
-							  } of the ${boxScore.quarter}`
-							: `${boxScore.quarter}, ${boxScore.time} remaining`}
+							: boxScore.shootout
+								? "Shootout"
+								: boxScore.elamTarget !== undefined
+									? `Elam Ending target: ${boxScore.elamTarget} points`
+									: isSport("baseball")
+										? `${
+												boxScore.teams[0].ptsQtrs.length ===
+												boxScore.teams[1].ptsQtrs.length
+													? "Bottom"
+													: "Top"
+											} of the ${boxScore.quarter}`
+										: `${boxScore.quarter}, ${boxScore.time} remaining`}
 					</span>
 					<span className="d-sm-none">
 						{boxScore.gameOver
 							? "F"
 							: boxScore.elamTarget !== undefined
-							? `Elam Ending target: ${boxScore.elamTarget} points`
-							: isSport("baseball")
-							? `${
-									boxScore.teams[0].ptsQtrs.length ===
-									boxScore.teams[1].ptsQtrs.length
-										? "B"
-										: "T"
-							  }${boxScore.quarterShort}`
-							: `${boxScore.quarterShort}, ${boxScore.time}`}
+								? `Elam Ending target: ${boxScore.elamTarget} points`
+								: isSport("baseball")
+									? `${
+											boxScore.teams[0].ptsQtrs.length ===
+											boxScore.teams[1].ptsQtrs.length
+												? "B"
+												: "T"
+										}${boxScore.quarterShort}`
+									: `${boxScore.quarterShort}, ${boxScore.time}`}
 					</span>
 				</div>
 			) : null}
@@ -449,7 +525,7 @@ const BaseballDiamond = ({
 	return (
 		<div>
 			<div className="text-center mb-2">
-				{outs} out{outs === 1 ? "" : "s"}
+				{outs} {helpers.plural("out", outs)}
 			</div>
 			<div className="d-flex justify-content-center">
 				<div className="d-flex mx-1">
@@ -489,16 +565,51 @@ const DetailedScore = ({
 		boxScore.teams[0].ptsQtrs.length,
 		boxScore.numPeriods ?? 0,
 	);
-	const qtrs: string[] = range(numPeriods).map(i => {
-		return i < boxScore.numPeriods || isSport("baseball")
-			? `${i + 1}`
-			: `OT${i - boxScore.numPeriods + 1}`;
+	const qtrs: {
+		title?: string;
+		label: string;
+		bold?: boolean;
+	}[] = range(numPeriods).map(i => {
+		return {
+			label:
+				i < boxScore.numPeriods || isSport("baseball")
+					? `${i + 1}`
+					: `OT${i - boxScore.numPeriods + 1}`,
+		};
 	});
 
 	if (isSport("baseball")) {
-		qtrs.push("R", "H", "E");
+		qtrs.push({
+			label: "R",
+			title: "Runs",
+			bold: true,
+		});
+		qtrs.push({
+			label: "H",
+			title: "Hits",
+			bold: true,
+		});
+		qtrs.push({
+			label: "E",
+			title: "Errors",
+			bold: true,
+		});
 	} else {
-		qtrs.push("F");
+		qtrs.push({
+			label: "F",
+			title: "Final score",
+			bold: true,
+		});
+	}
+
+	const shootout = boxScore.teams[0].sPts !== undefined;
+
+	if (shootout) {
+		qtrs.push({
+			label: "S",
+			title: "Shootout",
+			bold: true,
+		});
 	}
 
 	const liveGameSim = boxScore.won?.name === undefined;
@@ -528,16 +639,13 @@ const DetailedScore = ({
 						<thead>
 							<tr>
 								<th />
-								{qtrs.map((qtr, i) => (
+								{qtrs.map(info => (
 									<th
-										key={qtr}
-										className={
-											i < qtrs.length - (isSport("baseball") ? 3 : 1)
-												? "text-body-secondary"
-												: undefined
-										}
+										key={info.label}
+										className={info.bold ? undefined : "text-body-secondary"}
+										title={info.title}
 									>
-										{qtr}
+										{info.label}
 									</th>
 								))}
 							</tr>
@@ -575,11 +683,12 @@ const DetailedScore = ({
 													? (t.e as (number | undefined)[]).reduce<number>(
 															(prev, current) => prev + (current ?? 0),
 															0,
-													  )
+														)
 													: t.e}
 											</th>
 										</>
 									) : null}
+									{shootout ? <th>{t.sPts}</th> : null}
 								</tr>
 							))}
 						</tbody>
@@ -780,7 +889,7 @@ const BoxScoreWrapper = ({
 		const pure = boxScore.forceWin <= 500;
 
 		// Live game sim still has final score in won/lost.pts
-		const tie = boxScore.won.pts === boxScore.lost.pts;
+		const tie = getWinner([boxScore.won, boxScore.lost]) === -1;
 
 		forcedWinText = (
 			<>
@@ -792,10 +901,10 @@ const BoxScoreWrapper = ({
 						pure
 							? `${tie ? "Tie" : "Win"} was forced without giving a bonus to ${
 									tie ? "either" : "the winning"
-							  } team`
+								} team`
 							: `Forcing the ${tie ? "tie" : "win"} required giving ${
 									tie ? "a" : "the winning"
-							  } team a bonus`
+								} team a bonus`
 					}
 				>
 					{helpers.numberWithCommas(boxScore.forceWin)}

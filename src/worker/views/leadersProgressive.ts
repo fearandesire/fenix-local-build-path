@@ -1,8 +1,7 @@
 import { idb } from "../db";
 import { g } from "../util";
 import type { UpdateEvents, ViewInput } from "../../common/types";
-import { groupByUnique } from "../../common/groupBy";
-import range from "lodash-es/range";
+import { groupByUnique, range } from "../../common/utils";
 import {
 	GamesPlayedCache,
 	getCategoriesAndStats,
@@ -56,6 +55,7 @@ const updateLeadersProgressive = async (
 ) => {
 	// Respond to watchList in case players are listed twice in different categories
 	if (
+		updateEvents.includes("firstRun") ||
 		updateEvents.includes("watchList") ||
 		inputs.stat !== state.stat ||
 		inputs.playoffs !== state.playoffs ||
@@ -65,7 +65,6 @@ const updateLeadersProgressive = async (
 		const allStats = allCategories.map(cat => cat.stat);
 
 		const { categories, stats } = getCategoriesAndStats(inputs.stat);
-		const playoffs = inputs.playoffs === "playoffs";
 
 		const cat = categories[0];
 
@@ -73,16 +72,34 @@ const updateLeadersProgressive = async (
 
 		let allLeaders = seasons.map(season => ({
 			season,
+			linkSeason: false,
 			yearByYear: undefined as MyLeader | undefined,
 			active: undefined as MyLeader | undefined,
 			career: undefined as MyLeader | undefined,
 			singleSeason: undefined as MyLeader | undefined,
 		}));
 
+		for (const row of allLeaders) {
+			const awards = await idb.getCopy.awards({
+				season: row.season,
+			});
+			if (awards) {
+				row.linkSeason = true;
+			}
+		}
+
 		const leadersBySeason = groupByUnique(allLeaders, "season");
 
 		const gamesPlayedCache = new GamesPlayedCache();
-		await gamesPlayedCache.loadSeasons(seasons, playoffs);
+		if (inputs.playoffs === "combined") {
+			await gamesPlayedCache.loadSeasons(seasons, false);
+			await gamesPlayedCache.loadSeasons(seasons, true);
+		} else {
+			await gamesPlayedCache.loadSeasons(
+				seasons,
+				inputs.playoffs === "playoffs",
+			);
+		}
 
 		await iterateAllPlayers("all", async (pRaw, season) => {
 			if (typeof season !== "number") {
@@ -107,8 +124,9 @@ const updateLeadersProgressive = async (
 				],
 				ratings: ["skills", "pos"],
 				stats: ["abbrev", "tid", ...stats],
-				playoffs,
-				regularSeason: !playoffs,
+				playoffs: inputs.playoffs === "playoffs",
+				regularSeason: inputs.playoffs === "regularSeason",
+				combined: inputs.playoffs === "combined",
 				mergeStats: "totOnly" as const,
 				statType: inputs.statType,
 			};
@@ -133,7 +151,7 @@ const updateLeadersProgressive = async (
 							gamesPlayedCache,
 							p,
 							playerStats: p.stats,
-							playoffs,
+							seasonType: inputs.playoffs,
 							season,
 							statType: inputs.statType,
 						});
@@ -175,8 +193,10 @@ const updateLeadersProgressive = async (
 					};
 
 					let playerStats;
-					if (playoffs) {
+					if (inputs.playoffs === "playoffs") {
 						playerStats = p.careerStatsPlayoffs;
+					} else if (inputs.playoffs === "combined") {
+						playerStats = p.careerStatsCombined;
 					} else {
 						playerStats = p.careerStats;
 					}
@@ -187,7 +207,7 @@ const updateLeadersProgressive = async (
 						gamesPlayedCache,
 						p,
 						playerStats,
-						playoffs,
+						seasonType: inputs.playoffs,
 						season,
 						statType: inputs.statType,
 					});

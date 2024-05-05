@@ -1,5 +1,5 @@
 import { PHASE } from "../../common";
-import { team } from "../core";
+import { finances, team } from "../core";
 import { idb } from "../db";
 import { g, helpers } from "../util";
 import type { TeamSeason, UpdateEvents, ViewInput } from "../../common/types";
@@ -12,6 +12,7 @@ const updateTeamFinances = async (
 	state: any,
 ) => {
 	if (
+		updateEvents.includes("firstRun") ||
 		updateEvents.includes("gameSim") ||
 		updateEvents.includes("playerMovement") ||
 		updateEvents.includes("teamFinances") ||
@@ -19,7 +20,11 @@ const updateTeamFinances = async (
 		inputs.show !== state.show
 	) {
 		const contractsRaw = await team.getContracts(inputs.tid);
-		const payroll = (await team.getPayroll(contractsRaw)) / 1000;
+		let payroll = await team.getPayroll(contractsRaw);
+		const luxuryTaxAmount = finances.getLuxuryTaxAmount(payroll) / 1000;
+		const minPayrollAmount = finances.getMinPayrollAmount(payroll) / 1000;
+		payroll /= 1000;
+
 		let showInt;
 
 		if (inputs.show === "all") {
@@ -87,10 +92,7 @@ const updateTeamFinances = async (
 		// Add in luxuryTaxShare if it's missing
 		for (const teamSeason of teamSeasons) {
 			if (!teamSeason.revenues.luxuryTaxShare) {
-				teamSeason.revenues.luxuryTaxShare = {
-					amount: 0,
-					rank: 15,
-				};
+				teamSeason.revenues.luxuryTaxShare = 0;
 			}
 		}
 
@@ -104,20 +106,19 @@ const updateTeamFinances = async (
 				const outputKey = `revenues${helpers.upperCaseFirstLetter(
 					key,
 				)}` as const;
-				output[outputKey] = teamSeason.revenues[key].amount;
+				output[outputKey] = teamSeason.revenues[key];
 			}
 			for (const key of helpers.keys(teamSeason.expenses)) {
 				const outputKey = `expenses${helpers.upperCaseFirstLetter(
 					key,
 				)}` as const;
-				output[outputKey] = teamSeason.expenses[key].amount;
+				output[outputKey] = teamSeason.expenses[key];
 			}
 			return output;
 		};
 
 		const barData = teamSeasons.slice(0, showInt).map(teamSeason => {
-			const gpHome = teamSeason.gpHome ?? Math.round(teamSeason.gp / 2);
-			const att = teamSeason.att / gpHome;
+			const att = teamSeason.att / teamSeason.gpHome;
 
 			const numPlayoffRounds = g.get(
 				"numGamesPlayoffSeries",
@@ -153,7 +154,7 @@ const updateTeamFinances = async (
 		}
 
 		// Get stuff for the finances form
-		const t = await idb.getCopy.teamsPlus(
+		const tTemp = await idb.getCopy.teamsPlus(
 			{
 				attrs: ["budget", "adjustForInflation", "autoTicketPrice"],
 				seasonAttrs: ["expenses"],
@@ -164,13 +165,39 @@ const updateTeamFinances = async (
 			"noCopyCache",
 		);
 
-		if (!t) {
+		if (!tTemp) {
 			throw new Error("Team not found");
 		}
+
+		const t = tTemp as typeof tTemp & {
+			autoTicketPrice: boolean;
+			expenseLevelsLastThree: TeamSeason["expenseLevels"];
+		};
 
 		// undefined is true (for upgrades), and AI teams are always true
 		t.autoTicketPrice =
 			t.autoTicketPrice !== false || !g.get("userTids").includes(inputs.tid);
+
+		// Undo reverse from above
+		const teamSeasonsLastThree = teamSeasons.slice(0, 3).reverse();
+		t.expenseLevelsLastThree = {
+			coaching: await finances.getLevelLastThree("coaching", {
+				tid: inputs.tid,
+				teamSeasons: teamSeasonsLastThree,
+			}),
+			facilities: await finances.getLevelLastThree("facilities", {
+				tid: inputs.tid,
+				teamSeasons: teamSeasonsLastThree,
+			}),
+			health: await finances.getLevelLastThree("health", {
+				tid: inputs.tid,
+				teamSeasons: teamSeasonsLastThree,
+			}),
+			scouting: await finances.getLevelLastThree("scouting", {
+				tid: inputs.tid,
+				teamSeasons: teamSeasonsLastThree,
+			}),
+		};
 
 		const maxStadiumCapacity = teamSeasons.reduce((max, teamSeason) => {
 			if (teamSeason.stadiumCapacity > max) {
@@ -181,6 +208,19 @@ const updateTeamFinances = async (
 		}, 0);
 
 		const autoTicketPrice = await getAutoTicketPriceByTid(inputs.tid);
+
+		const otherTeamTicketPrices = [];
+		const teams = await idb.cache.teams.getAll();
+		for (const t of teams) {
+			if (!t.disabled && t.tid !== inputs.tid) {
+				if (t.autoTicketPrice) {
+					otherTeamTicketPrices.push(await getAutoTicketPriceByTid(t.tid));
+				} else {
+					otherTeamTicketPrices.push(t.budget.ticketPrice);
+				}
+			}
+		}
+		otherTeamTicketPrices.sort((a, b) => b - a);
 
 		return {
 			abbrev: inputs.abbrev,
@@ -193,8 +233,10 @@ const updateTeamFinances = async (
 			salaryCap: g.get("salaryCap") / 1000,
 			minContract: g.get("minContract") / 1000,
 			minPayroll: g.get("minPayroll") / 1000,
+			minPayrollAmount,
 			luxuryPayroll: g.get("luxuryPayroll") / 1000,
 			luxuryTax: g.get("luxuryTax"),
+			luxuryTaxAmount,
 			userTid: g.get("userTid"),
 			budget: g.get("budget"),
 			spectator: g.get("spectator"),
@@ -206,6 +248,8 @@ const updateTeamFinances = async (
 			contractTotals,
 			salariesSeasons,
 			phase: g.get("phase"),
+			godMode: g.get("godMode"),
+			otherTeamTicketPrices,
 		};
 	}
 };

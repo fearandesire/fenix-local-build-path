@@ -1,6 +1,5 @@
 import { m, AnimatePresence } from "framer-motion";
-import orderBy from "lodash-es/orderBy";
-import { useState, useReducer, useRef } from "react";
+import { useState, useReducer, useRef, useCallback, useEffect } from "react";
 import {
 	DIFFICULTY,
 	applyRealTeamInfo,
@@ -13,7 +12,9 @@ import {
 	gameAttributesArrayToObject,
 	WEBSITE_ROOT,
 	unwrapGameAttribute,
-	MAX_SUPPORTED_LEAGUE_VERSION,
+	LEAGUE_DATABASE_VERSION,
+	ACCOUNT_API_URL,
+	fetchWrapper,
 } from "../../../common";
 import {
 	ActionButton,
@@ -48,9 +49,11 @@ import LeagueMenu from "./LeagueMenu";
 import LeaguePartPicker from "./LeaguePartPicker";
 import type { LeagueInfo, NewLeagueTeam } from "./types";
 import CustomizeSettings from "./CustomizeSettings";
-import CustomizeTeams from "./CustomizeTeams";
+import CustomizeTeams, { makeTIDsSequential } from "./CustomizeTeams";
 import type { Settings } from "../../../worker/views/settings";
 import type { BasicInfo } from "../../../worker/api/leagueFileUpload";
+import { SelectSeasonRange } from "./SelectSeasonRange";
+import { orderBy } from "../../../common/utils";
 
 const animationVariants = {
 	visible: {
@@ -139,7 +142,7 @@ const initKeptKeys = ({
 };
 
 export const MIN_SEASON = 1947;
-export const MAX_SEASON = 2023;
+export const MAX_SEASON = 2024;
 const MAX_PHASE = PHASE.PLAYOFFS;
 
 const seasons: { key: string; value: string }[] = [];
@@ -211,7 +214,13 @@ const phases = [
 
 type State = {
 	creating: boolean;
-	customize: "default" | "custom-rosters" | "custom-url" | "legends" | "real";
+	customize:
+		| "default"
+		| "custom-rosters"
+		| "custom-url"
+		| "legends"
+		| "real"
+		| "crossEra";
 	season: number;
 	phase: number;
 	name: string;
@@ -245,6 +254,7 @@ type Action =
 	  }
 	| {
 			type: "clearLeagueFile";
+			defaultSettings: State["settings"];
 	  }
 	| {
 			type: "setCustomize";
@@ -279,6 +289,13 @@ type Action =
 			teams: NewLeagueTeam[];
 			confs: Conf[];
 			divs: Div[];
+	  }
+	| {
+			type: "setTeamsCrossEra";
+			teams: NewLeagueTeam[];
+			confs: Conf[];
+			divs: Div[];
+			defaultSettings: State["settings"];
 	  }
 	| {
 			type: "setTid";
@@ -361,7 +378,7 @@ const getSettingsFromGameAttributes = (
 			const value = unwrapGameAttribute(gameAttributes, key);
 			if (value !== undefined) {
 				if (key === "repeatSeason") {
-					newSettings[key] = !!value;
+					newSettings[key] = (value as any)?.type;
 				} else {
 					(newSettings[key] as any) = value;
 				}
@@ -394,12 +411,19 @@ const reducer = (state: State, action: Action): State => {
 				url: undefined,
 				loadingLeagueFile: false,
 				keptKeys: [],
+				settings: {
+					// This is to reset the randomization setting, which is changed for legends and cross-era leagues
+					...action.defaultSettings,
+				},
 				teams: teamsDefault,
 				tid: getNewTid(getTeamRegionName(state.teams, state.tid), teamsDefault),
 			};
 
 		case "setCustomize": {
-			const allKeys = action.customize === "default" ? [] : state.allKeys;
+			const allKeys =
+				action.customize === "default" || action.customize === "crossEra"
+					? []
+					: state.allKeys;
 			return {
 				...state,
 				customize: action.customize,
@@ -410,7 +434,7 @@ const reducer = (state: State, action: Action): State => {
 		case "setDifficulty":
 			return {
 				...state,
-				difficulty: parseFloat(action.difficulty),
+				difficulty: helpers.localeParseFloat(action.difficulty),
 			};
 
 		case "setPhase":
@@ -425,11 +449,12 @@ const reducer = (state: State, action: Action): State => {
 				keptKeys: action.keptKeys,
 			};
 
-		case "setLegend":
+		case "setLegend": {
 			return {
 				...state,
 				legend: action.legend,
 			};
+		}
 
 		case "setName":
 			return {
@@ -452,6 +477,30 @@ const reducer = (state: State, action: Action): State => {
 				divs: action.divs,
 				teams: action.teams,
 				tid: getNewTid(prevTeamRegionName, action.teams),
+			};
+		}
+
+		case "setTeamsCrossEra": {
+			const prevTeamRegionName = getTeamRegionName(state.teams, state.tid);
+
+			const settings = {
+				...action.defaultSettings,
+			};
+
+			// What we want - change the default randomization value from "none" to "debuts". This mostly does that, unless the user has specified "none" in the global default settings, in which case we can't distinguish that from nothing being selected. Probably nobody will notice the difference. Using "debuts" rather than "debutsKeepCurrent" because really they're the same in this context (meaningless not to keep current players) so only "debuts" is exposed in the settings UI.
+			if (settings.randomization === "none") {
+				settings.randomization = "debuts";
+			}
+
+			return {
+				...state,
+				confs: action.confs,
+				divs: action.divs,
+				teams: action.teams,
+				tid: getNewTid(prevTeamRegionName, action.teams),
+				loadingLeagueFile: false,
+				pendingInitialLeagueInfo: false,
+				settings,
 			};
 		}
 
@@ -567,7 +616,7 @@ const reducer = (state: State, action: Action): State => {
 					hasRookieContracts: true,
 					startingSeason: action.startingSeason,
 					teams: action.teams,
-					version: MAX_SUPPORTED_LEAGUE_VERSION,
+					version: LEAGUE_DATABASE_VERSION,
 				},
 				file: undefined,
 				url: undefined,
@@ -636,11 +685,12 @@ const NewLeague = (props: View<"newLeague">) => {
 			if (importing) {
 				customize = "custom-rosters";
 			}
-			if (props.type === "real") {
-				customize = "real";
-			}
-			if (props.type === "legends") {
-				customize = "legends";
+			if (
+				props.type === "real" ||
+				props.type === "legends" ||
+				props.type === "crossEra"
+			) {
+				customize = props.type;
 			}
 
 			const basicInfo = undefined;
@@ -719,6 +769,8 @@ const NewLeague = (props: View<"newLeague">) => {
 		title = "New Random Players League";
 	} else if (props.type === "legends") {
 		title = "New Legends League";
+	} else if (props.type === "crossEra") {
+		title = "New Cross-Era League";
 	} else {
 		title = "New Real Players League";
 	}
@@ -758,7 +810,9 @@ const NewLeague = (props: View<"newLeague">) => {
 			: false;
 
 		const startingSeasonFromInput =
-			state.customize === "default" ? startingSeason : undefined;
+			state.customize === "default" || state.customize === "crossEra"
+				? startingSeason
+				: undefined;
 
 		try {
 			let getLeagueOptions: GetLeagueOptions | undefined;
@@ -769,9 +823,15 @@ const NewLeague = (props: View<"newLeague">) => {
 					phase: state.phase,
 					randomDebuts:
 						settings.randomization === "debuts" ||
-						settings.randomization === "debutsForever",
+						settings.randomization === "debutsKeepCurrent" ||
+						settings.randomization === "debutsForever" ||
+						settings.randomization === "debutsForeverKeepCurrent",
+					randomDebutsKeepCurrent:
+						settings.randomization === "debutsKeepCurrent" ||
+						settings.randomization === "debutsForeverKeepCurrent",
 					realDraftRatings: settings.realDraftRatings,
 					realStats: settings.realStats,
+					includePlayers: state.keptKeys.includes("players"),
 				};
 			} else if (state.customize === "legends") {
 				getLeagueOptions = {
@@ -827,6 +887,17 @@ const NewLeague = (props: View<"newLeague">) => {
 				team: teamRegionName,
 				league_id: lid,
 			});
+			if (window.enableLogging) {
+				fetchWrapper({
+					url: `${ACCOUNT_API_URL}/log_event.php`,
+					method: "POST",
+					data: {
+						sport: process.env.SPORT,
+						type: "new_league",
+					},
+					credentials: "include",
+				});
+			}
 
 			realtimeUpdate([], `/l/${lid}`);
 		} catch (err) {
@@ -848,7 +919,10 @@ const NewLeague = (props: View<"newLeague">) => {
 		output?: LeagueFileUploadOutput,
 	) => {
 		if (err) {
-			dispatch({ type: "clearLeagueFile" });
+			dispatch({
+				type: "clearLeagueFile",
+				defaultSettings: props.defaultSettings,
+			});
 			return;
 		}
 
@@ -864,13 +938,13 @@ const NewLeague = (props: View<"newLeague">) => {
 
 				// God, I hate being permissive...
 				if (typeof t.pop !== "number") {
-					t.pop = parseFloat(t.pop);
+					t.pop = helpers.localeParseFloat(t.pop);
 				}
 				if (Number.isNaN(t.pop)) {
 					t.pop = 1;
 				}
 
-				t.pop = parseFloat(t.pop.toFixed(2));
+				t.pop = helpers.localeParseFloat(t.pop.toFixed(2));
 			}
 
 			newTeams = helpers.addPopRank(newTeams);
@@ -919,22 +993,83 @@ const NewLeague = (props: View<"newLeague">) => {
 		}
 	};
 
-	const handleNewLeagueInfo = (leagueInfo: LeagueInfo) => {
-		const newTeams = helpers.addPopRank(helpers.deepCopy(leagueInfo.teams));
+	const handleNewLeagueInfo = useCallback(
+		(
+			leagueInfo: LeagueInfo & {
+				randomization?: "debuts";
+			},
+		) => {
+			const newTeams = helpers.addPopRank(helpers.deepCopy(leagueInfo.teams));
 
-		dispatch({
-			type: "newLeagueInfo",
-			allKeys: leagueInfo.stores,
-			teams: applyRealTeamInfos(
-				newTeams,
-				props.realTeamInfo,
-				leagueInfo.startingSeason,
-			),
-			gameAttributes: leagueInfo.gameAttributes,
-			defaultSettings: props.defaultSettings,
-			startingSeason: leagueInfo.startingSeason,
+			dispatch({
+				type: "newLeagueInfo",
+				allKeys: leagueInfo.stores,
+				teams: applyRealTeamInfos(
+					newTeams,
+					props.realTeamInfo,
+					leagueInfo.startingSeason,
+				),
+				gameAttributes: leagueInfo.gameAttributes,
+				defaultSettings:
+					leagueInfo.randomization === undefined
+						? props.defaultSettings
+						: {
+								...props.defaultSettings,
+								randomization: leagueInfo.randomization,
+							},
+				startingSeason: leagueInfo.startingSeason,
+			});
+		},
+		[props.defaultSettings, props.realTeamInfo],
+	);
+
+	const [showSeasonRange, setShowSeasonRange] = useState(false);
+	const [seasonCrossEraStart, setSeasonCrossEraStart] = useState(MIN_SEASON);
+	const [seasonCrossEraEnd, setSeasonCrossEraEnd] = useState(MAX_SEASON);
+	const seasonRange: [number, number] = [
+		seasonCrossEraStart,
+		seasonCrossEraEnd,
+	];
+
+	const generateCrossEraTeams = async () => {
+		dispatch({ type: "loadingLeagueFile" });
+
+		const response = await toWorker("main", "getRandomTeams", {
+			divInfo: {
+				type: "autoSeasonRange",
+			},
+			real: true,
+			weightByPopulation: false,
+			northAmericaOnly: false,
+			seasonRange,
 		});
+
+		if (typeof response === "string") {
+			throw new Error(`Error randomizing teams: ${response}`);
+		} else {
+			const newTeams = applyRealTeamInfos(
+				makeTIDsSequential(response.teams),
+				props.realTeamInfo,
+				"inTeamObject",
+			);
+
+			dispatch({
+				type: "setTeamsCrossEra",
+				confs: response.confs,
+				divs: response.divs,
+				teams: helpers.addPopRank(newTeams),
+				defaultSettings: props.defaultSettings,
+			});
+		}
 	};
+
+	// This handles initial load
+	useEffect(() => {
+		if (state.customize === "crossEra") {
+			generateCrossEraTeams();
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	let pageTitle = title;
 	if (currentScreen === "teams") {
@@ -1026,11 +1161,15 @@ const NewLeague = (props: View<"newLeague">) => {
 			((state.file === undefined && state.url === undefined) ||
 				state.loadingLeagueFile)) ||
 		((state.customize === "real" || state.customize === "legends") &&
-			state.pendingInitialLeagueInfo);
+			state.pendingInitialLeagueInfo) ||
+		(state.customize === "crossEra" &&
+			(state.loadingLeagueFile || state.pendingInitialLeagueInfo));
 	const showLoadingIndicator =
 		disableWhileLoadingLeagueFile &&
 		(state.loadingLeagueFile ||
-			((state.customize === "real" || state.customize === "legends") &&
+			((state.customize === "real" ||
+				state.customize === "legends" ||
+				state.customize === "crossEra") &&
 				state.pendingInitialLeagueInfo));
 
 	const bannedExpansionSeasons = [
@@ -1050,7 +1189,7 @@ const NewLeague = (props: View<"newLeague">) => {
 	}
 	if (state.season === MAX_SEASON && state.phase > MAX_PHASE) {
 		invalidSeasonPhaseMessage = `Sorry, I'm not allowed to share the results of the ${MAX_SEASON} ${
-			(PHASE_TEXT as any)[MAX_PHASE]
+			MAX_PHASE === PHASE.PRESEASON ? "season" : (PHASE_TEXT as any)[MAX_PHASE]
 		} yet.`;
 	}
 
@@ -1107,7 +1246,8 @@ const NewLeague = (props: View<"newLeague">) => {
 								/>
 							</div>
 
-							{state.customize === "default" ? (
+							{state.customize === "default" ||
+							state.customize === "crossEra" ? (
 								<div className="mb-3">
 									<label
 										className="form-label"
@@ -1144,8 +1284,19 @@ const NewLeague = (props: View<"newLeague">) => {
 														phase: value2,
 														randomDebuts:
 															state.settings.randomization === "debuts" ||
-															state.settings.randomization === "debutsForever",
+															state.settings.randomization ===
+																"debutsKeepCurrent" ||
+															state.settings.randomization ===
+																"debutsForever" ||
+															state.settings.randomization ===
+																"debutsForeverKeepCurrent",
+														randomDebutsKeepCurrent:
+															state.settings.randomization ===
+																"debutsKeepCurrent" ||
+															state.settings.randomization ===
+																"debutsForeverKeepCurrent",
 														realDraftRatings: state.settings.realDraftRatings,
+														includePlayers: false,
 
 														// Adding historical seasons just screws up tid
 														realStats: "none",
@@ -1210,7 +1361,12 @@ const NewLeague = (props: View<"newLeague">) => {
 										onLoading={legend => {
 											dispatch({ type: "setLegend", legend });
 										}}
-										onDone={handleNewLeagueInfo}
+										onDone={info => {
+											handleNewLeagueInfo({
+												...info,
+												randomization: "debuts",
+											});
+										}}
 									/>
 								</div>
 							) : null}
@@ -1250,12 +1406,15 @@ const NewLeague = (props: View<"newLeague">) => {
 												<option key={t.tid} value={t.tid}>
 													{showLoadingIndicator
 														? "Loading..."
-														: `${t.region} ${t.name}`}
+														: `${t.region} ${t.name}${
+																t.season !== undefined ? ` (${t.season})` : ""
+															}`}
 												</option>
 											);
 										})}
 									</select>
-									{state.customize === "default" ? (
+									{state.customize === "default" ||
+									state.customize === "crossEra" ? (
 										<button
 											className="btn btn-light-bordered"
 											disabled={disableWhileLoadingLeagueFile}
@@ -1292,6 +1451,39 @@ const NewLeague = (props: View<"newLeague">) => {
 								) : (
 									<span className="text-body-secondary">Population: equal</span>
 								)}
+								{state.customize === "crossEra" ? (
+									<div className="d-flex mt-1">
+										{showSeasonRange ? (
+											<SelectSeasonRange
+												className="me-auto"
+												disabled={disableWhileLoadingLeagueFile}
+												seasonRange={seasonRange}
+												setters={[setSeasonCrossEraStart, setSeasonCrossEraEnd]}
+											/>
+										) : null}
+										<ActionButton
+											variant="secondary"
+											type="button"
+											disabled={disableWhileLoadingLeagueFile}
+											processing={showLoadingIndicator}
+											onClick={generateCrossEraTeams}
+											processingText="Selecting Teams"
+										>
+											Regenerate Historical Teams
+										</ActionButton>
+										{showSeasonRange ? null : (
+											<button
+												className="btn btn-secondary ms-auto"
+												disabled={disableWhileLoadingLeagueFile}
+												onClick={() => {
+													setShowSeasonRange(true);
+												}}
+											>
+												Set season range
+											</button>
+										)}
+									</div>
+								) : null}
 							</div>
 
 							<div className="mb-3">
@@ -1325,9 +1517,8 @@ const NewLeague = (props: View<"newLeague">) => {
 								</span>
 							</div>
 
-							<div className="text-center mt-3">
+							<div className="mt-3 d-flex flex-wrap justify-content-center gap-2">
 								<ActionButton
-									className="me-2"
 									size="lg"
 									type="submit"
 									disabled={
@@ -1370,7 +1561,8 @@ const NewLeague = (props: View<"newLeague">) => {
 
 						{props.type === "custom" ||
 						props.type === "real" ||
-						props.type === "legends" ? (
+						props.type === "legends" ||
+						props.type === "crossEra" ? (
 							<div
 								className={classNames(
 									"col-sm-6 order-first order-sm-last mb-3 mb-sm-0",
@@ -1425,10 +1617,43 @@ const NewLeague = (props: View<"newLeague">) => {
 														from only one decade, or the greatest players of all
 														time.
 													</p>
+													<p>
+														By default, "Random Debuts" is enabled, meaning that
+														any real players not on the initial teams will be
+														randomly placed in future draft classes.
+													</p>
 													<p className="mb-0">
 														<a href="https://zengm.com/blog/2020/05/legends-leagues/">
 															More details
 														</a>
+													</p>
+												</li>
+											</ul>
+										</>
+									) : null}
+									{props.type === "crossEra" ? (
+										<>
+											<ul className="list-group list-group-flush">
+												<li className="list-group-item bg-light">
+													<h3>Mix historical teams in one league</h3>
+													<p>
+														Cross-era leagues are filled with real historical
+														teams from different seasons. Each league you create
+														has a new set of teams.
+													</p>
+													<h3>
+														Pick a range of historical seasons to draw from
+													</h3>
+													<p>
+														League structure (number of
+														teams/divisions/conferences) is based on the upper
+														end of the selected season range.
+													</p>
+													<h3>Real/random draft classes</h3>
+													<p className="mb-0">
+														By default, "Random Debuts" is enabled, meaning that
+														any real players not on the initial teams will be
+														randomly placed in future draft classes.
 													</p>
 												</li>
 											</ul>
@@ -1453,7 +1678,13 @@ const NewLeague = (props: View<"newLeague">) => {
 															newCustomize !== "real" &&
 															newCustomize !== "legends"
 														) {
-															dispatch({ type: "clearLeagueFile" });
+															dispatch({
+																type: "clearLeagueFile",
+																defaultSettings: props.defaultSettings,
+															});
+														}
+														if (newCustomize === "crossEra") {
+															generateCrossEraTeams();
 														}
 													}}
 													value={state.customize}
@@ -1465,6 +1696,9 @@ const NewLeague = (props: View<"newLeague">) => {
 													</option>
 													{SPORT_HAS_REAL_PLAYERS ? (
 														<option value="real">Real players and teams</option>
+													) : null}
+													{SPORT_HAS_LEGENDS ? (
+														<option value="crossEra">Cross-era</option>
 													) : null}
 													{SPORT_HAS_LEGENDS ? (
 														<option value="legends">Legends</option>

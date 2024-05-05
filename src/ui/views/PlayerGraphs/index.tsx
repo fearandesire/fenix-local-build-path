@@ -6,7 +6,7 @@ import useDropdownOptions, {
 } from "../../hooks/useDropdownOptions";
 import realtimeUpdate from "../../util/realtimeUpdate";
 import { getCols, helpers, toWorker } from "../../util";
-import { groupByUnique } from "../../../common/groupBy";
+import { groupByUnique } from "../../../common/utils";
 import type { Col } from "../../components/DataTable";
 import classNames from "classnames";
 
@@ -147,7 +147,7 @@ const PickStat = ({
 		{ key: "bio", value: "Bio" },
 		{ key: "ratings", value: "Ratings" },
 	];
-	const playoffs = useDropdownOptions("playoffs");
+	const playoffs = useDropdownOptions("playoffsCombined");
 
 	const xyCapital = label === "x" ? "X" : "Y";
 
@@ -275,7 +275,6 @@ const PlayerGraphs = ({
 }: View<"playerGraphs">) => {
 	useTitleBar({
 		title: "Player Graphs",
-		jumpTo: true,
 		dropdownView: "player_graphs",
 	});
 

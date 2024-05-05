@@ -1,4 +1,4 @@
-import { allStar, finances, player, team } from "..";
+import { allStar, player, season, team } from "..";
 import { idb } from "../../db";
 import { g, helpers, random } from "../../util";
 import type {
@@ -42,11 +42,6 @@ export const processTeam = (
 		otl: number;
 		cid: number;
 		did: number;
-		expenses: {
-			health: {
-				rank: number;
-			};
-		};
 	},
 	players: Player<MinimalPlayerRatings>[],
 	exhibitionGame?: boolean,
@@ -110,7 +105,7 @@ export const processTeam = (
 		pace: 0,
 		won: teamSeason.won,
 		lost: teamSeason.lost,
-		tied: g.get("ties", "current") ? teamSeason.tied : undefined,
+		tied: season.hasTies("current") ? teamSeason.tied : undefined,
 		otl: g.get("otl", "current") ? teamSeason.otl : undefined,
 		cid: teamSeason.cid,
 		did: teamSeason.did,
@@ -122,7 +117,6 @@ export const processTeam = (
 			def: 0,
 			reb: 0,
 		},
-		healthRank: finances.getRankLastThree([teamSeason], "expenses", "health"),
 		compositeRating,
 		depth: teamInput.depth,
 	};
@@ -381,11 +375,6 @@ const loadTeams = async (tids: number[], conditions: Conditions) => {
 					lost: 0,
 					tied: 0,
 					otl: 0,
-					expenses: {
-						health: {
-							rank: 1,
-						},
-					},
 				},
 				players,
 			);

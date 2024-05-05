@@ -2,8 +2,8 @@ import { bySport, PLAYER } from "../../common";
 import { idb } from "../db";
 import { g } from "../util";
 import type { ViewInput } from "../../common/types";
-import maxBy from "lodash-es/maxBy";
 import addFirstNameShort from "../util/addFirstNameShort";
+import { maxBy } from "../../common/utils";
 
 const updateDraftHistory = async (inputs: ViewInput<"draftHistory">) => {
 	// Update every time because anything could change this (unless all players from class are retired)
@@ -89,6 +89,10 @@ const updateDraftHistory = async (inputs: ViewInput<"draftHistory">) => {
 					mvp: p.awards.filter(
 						(award: any) => award.type === "Most Valuable Player",
 					).length,
+					roy: p.awards.filter((award: any) => {
+						// "includes" to handle OROY and DROY in FBGM
+						return award.type.includes("Rookie of the Year");
+					}).length,
 					champ: p.awards.filter(
 						(award: any) => award.type === "Won Championship",
 					).length,

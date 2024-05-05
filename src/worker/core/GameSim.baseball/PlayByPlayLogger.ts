@@ -1,7 +1,8 @@
 import type { POS_NUMBERS_INVERSE } from "../../../common/constants.baseball";
+import { formatScoringSummaryEvent } from "../../../common/formatScoringSummaryEvent.baseball";
 import type { Runner, TeamNum } from "./types";
 
-type PlayByPlayEventInput =
+export type PlayByPlayEventInput =
 	| {
 			type: "sideStart";
 			inning: number;
@@ -21,26 +22,17 @@ type PlayByPlayEventInput =
 	  }
 	| {
 			type: "injury";
-			t: TeamNum;
 			pid: number;
 			replacementPid: number | undefined;
 	  }
 	| {
 			type: "reliefPitcher";
-			t: TeamNum;
 			pidOff: number;
 			pidOn: number;
 	  }
 	| {
 			type: "plateAppearance";
-			t: TeamNum;
 			pid: number;
-	  }
-	| {
-			type: "pitch";
-			t: TeamNum;
-			pid: number;
-			pitchType: string;
 	  }
 	| {
 			type: "foul";
@@ -66,7 +58,6 @@ type PlayByPlayEventInput =
 	  }
 	| {
 			type: "bunt" | "ground" | "line";
-			t: TeamNum;
 			pid: number;
 			direction:
 				| "left"
@@ -80,7 +71,6 @@ type PlayByPlayEventInput =
 	  }
 	| {
 			type: "fly";
-			t: TeamNum;
 			pid: number;
 			direction:
 				| "left"
@@ -95,10 +85,10 @@ type PlayByPlayEventInput =
 	| {
 			type: "hitResult";
 			result: "flyOut" | "throwOut" | "fieldersChoice" | "doublePlay" | "hit";
-			t: TeamNum;
 			pid: number;
 			posDefense: (keyof typeof POS_NUMBERS_INVERSE)[]; // Like for a double play, this could be [6, 4, 3]
 			runners: Runner[];
+			t: TeamNum;
 			numBases: 1 | 2 | 3 | 4;
 			outAtNextBase: boolean; // For if the runner was thrown out when trying to advance one more base
 			outs: number;
@@ -107,11 +97,11 @@ type PlayByPlayEventInput =
 	| {
 			type: "hitResult";
 			result: "error";
-			t: TeamNum;
 			pid: number;
 			pidError: number;
 			posDefense: (keyof typeof POS_NUMBERS_INVERSE)[]; // Like for a double play, this could be [6, 4, 3]
 			runners: Runner[];
+			t: TeamNum;
 			numBases: 1 | 2 | 3 | 4;
 			outAtNextBase: boolean; // For if the runner was thrown out when trying to advance one more base
 			outs: number;
@@ -119,17 +109,17 @@ type PlayByPlayEventInput =
 	  }
 	| {
 			type: "walk";
-			t: TeamNum;
 			pid: number;
 			runners: Runner[];
+			t: TeamNum;
 			intentional: boolean;
 			bases: [number | undefined, number | undefined, number | undefined];
 	  }
 	| {
 			type: "hitByPitch";
-			t: TeamNum;
 			pid: number;
 			runners: Runner[];
+			t: TeamNum;
 			bases: [number | undefined, number | undefined, number | undefined];
 	  }
 	| {
@@ -153,16 +143,37 @@ type PlayByPlayEventInput =
 	  }
 	| {
 			type: "balk" | "wildPitch" | "passedBall";
-			t: TeamNum;
 			pid: number;
 			runners: Runner[];
+			t: TeamNum;
 			bases: [number | undefined, number | undefined, number | undefined];
 	  }
 	| {
 			type: "sub";
-			t: TeamNum;
 			pidOff: number;
 			pidOn: number;
+	  }
+	| {
+			type: "shootoutStart";
+			rounds: number;
+	  }
+	| {
+			type: "shootoutTeam";
+			t: TeamNum;
+			pid: number;
+			pitcherPid: number;
+	  }
+	| {
+			type: "shootoutShot";
+			t: TeamNum;
+			pid: number;
+			made: boolean;
+			att: number;
+			pitcherPid: number;
+			flavor: number;
+	  }
+	| {
+			type: "shootoutTie";
 	  };
 
 type PlayByPlayEventStat = {
@@ -189,17 +200,14 @@ export type PlayByPlayEventScore = PlayByPlayEvent & {
 class PlayByPlayLogger {
 	active: boolean;
 
-	playByPlay: PlayByPlayEvent[];
+	playByPlay: PlayByPlayEvent[] = [];
 
-	scoringSummary: PlayByPlayEventScore[];
+	scoringSummary: PlayByPlayEventScore[] = [];
 
-	period: number;
+	period = 1;
 
 	constructor(active: boolean) {
 		this.active = active;
-		this.playByPlay = [];
-		this.scoringSummary = [];
-		this.period = 1;
 	}
 
 	logEvent(event: PlayByPlayEventInput) {
@@ -209,33 +217,9 @@ class PlayByPlayLogger {
 			this.period = event.inning;
 		}
 
-		let scored = false;
-		if (event.type === "hitResult" && event.numBases === 4) {
-			// Home run
-			scored = true;
-		} else {
-			const runners = (event as Extract<PlayByPlayEvent, { type: "hitResult" }>)
-				.runners;
-			if (runners?.some(runner => runner.scored)) {
-				scored = true;
-			}
-		}
-
-		if (scored) {
-			const scoringSummaryEvent = {
-				...event,
-				inning: this.period,
-			};
-			if (
-				scoringSummaryEvent.type === "balk" ||
-				scoringSummaryEvent.type === "wildPitch" ||
-				scoringSummaryEvent.type === "passedBall"
-			) {
-				// Swap team, so it shows up correctly in scoring summary. Basically, t must be team that scored
-				scoringSummaryEvent.t = scoringSummaryEvent.t === 0 ? 1 : 0;
-			}
-
-			this.scoringSummary.push(scoringSummaryEvent as any);
+		const scoringSummaryEvent = formatScoringSummaryEvent(event, this.period);
+		if (scoringSummaryEvent) {
+			this.scoringSummary.push(scoringSummaryEvent);
 		}
 	}
 

@@ -90,7 +90,6 @@ import type {
 	AllStarPlayer,
 	League,
 } from "../../common/types";
-import orderBy from "lodash-es/orderBy";
 import {
 	addSimpleAndTeamAwardsToAwardsByPlayer,
 	type AwardsByPlayer,
@@ -101,7 +100,12 @@ import { getScore } from "../core/player/checkJerseyNumberRetirement";
 import type { NewLeagueTeam } from "../../ui/views/NewLeague/types";
 import { PointsFormulaEvaluator } from "../core/team/evaluatePointsFormula";
 import type { Settings } from "../views/settings";
-import { getAutoTicketPriceByTid } from "../core/game/attendance";
+import {
+	getActualAttendance,
+	getAdjustedTicketPrice,
+	getAutoTicketPriceByTid,
+	getBaseAttendance,
+} from "../core/game/attendance";
 import goatFormula from "../util/goatFormula";
 import getRandomTeams from "./getRandomTeams";
 import { withState } from "../core/player/name";
@@ -112,11 +116,10 @@ import type { IDBPIndex, IDBPObjectStore } from "idb";
 import type { LeagueDB } from "../db/connectLeague";
 import playMenu from "./playMenu";
 import toolsMenu from "./toolsMenu";
-import omit from "lodash-es/omit";
 import addFirstNameShort from "../util/addFirstNameShort";
 import statsBaseball from "../core/team/stats.baseball";
 import { extraRatings } from "../views/playerRatings";
-import { groupByUnique } from "../../common/groupBy";
+import { groupByUnique, maxBy, omit, orderBy } from "../../common/utils";
 import {
 	finalizePlayersRelativesList,
 	formatPlayerRelativesList,
@@ -125,6 +128,10 @@ import { TOO_MANY_TEAMS_TOO_SLOW } from "../core/season/getInitialNumGamesConfDi
 import * as exhibitionGame from "./exhibitionGame";
 import { getSummary } from "../views/trade";
 import { getStats, statTypes } from "../views/playerGraphs";
+import { DEFAULT_LEVEL } from "../../common/budgetLevels";
+import isUntradable from "../core/trade/isUntradable";
+import getWinner from "../../common/getWinner";
+import formatScoreWithShootout from "../../common/formatScoreWithShootout";
 
 const acceptContractNegotiation = async ({
 	pid,
@@ -703,11 +710,16 @@ const deleteOldData = async (options: {
 		let updated = false;
 		if (p.ratings.length > 0) {
 			updated = true;
-			p.ratings = [p.ratings.at(-1)!];
+			const latestSeason = p.ratings.at(-1)?.season;
+			p.ratings = p.ratings.filter(row => row.season >= latestSeason);
 		}
 		if (p.stats.length > 0) {
 			updated = true;
-			p.stats = [p.stats.at(-1)];
+			let latestSeason = g.get("season");
+			if (g.get("phase") === PHASE.PRESEASON) {
+				latestSeason -= 1;
+			}
+			p.stats = p.stats.filter(row => row.season >= latestSeason);
 		}
 		if (p.injuries.length > 0) {
 			if (
@@ -914,6 +926,7 @@ const deleteScheduledEvents = async (type: string) => {
 						"threePointTendencyFactor",
 						"threePointAccuracyFactor",
 						"twoPointAccuracyFactor",
+						"ftAccuracyFactor",
 						"blockFactor",
 						"stealFactor",
 						"turnoverFactor",
@@ -947,13 +960,10 @@ const draftUser = async (pid: number, conditions: Conditions) => {
 	const draftPicks = await draft.getOrder();
 	const dp = draftPicks[0];
 
-	// eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
 	if (dp && g.get("userTids").includes(dp.tid)) {
 		draftPicks.shift();
 		await draft.selectPlayer(dp, pid);
 		await draft.afterPicks(draftPicks.length === 0, conditions);
-	} else {
-		throw new Error("User trying to draft out of turn.");
 	}
 };
 
@@ -1319,11 +1329,15 @@ const exportPlayerGamesCsv = async (season: number | "all") => {
 	while (cursor) {
 		const { gid, playoffs, season, teams } = cursor.value;
 
-		for (let i = 0; i < 2; i++) {
+		for (const i of [0, 1] as const) {
+			const j = i === 0 ? 1 : 0;
 			const t = teams[i];
-			const t2 = teams[i === 0 ? 1 : 0];
+			const t2 = teams[j];
 
 			for (const p of t.players) {
+				const winner = getWinner([t, t2]);
+				const result = winner === i ? "W" : winner === j ? "L" : "T";
+
 				rows.push([
 					gid,
 					p.pid,
@@ -1331,8 +1345,8 @@ const exportPlayerGamesCsv = async (season: number | "all") => {
 					p.pos,
 					g.get("teamInfoCache")[t.tid]?.abbrev,
 					g.get("teamInfoCache")[t2.tid]?.abbrev,
-					`${t.pts}-${t2.pts}`,
-					t.pts > t2.pts ? "W" : "L",
+					formatScoreWithShootout(t, t2),
+					result,
 					season,
 					playoffs,
 					p.min,
@@ -1441,10 +1455,10 @@ const exportDraftClass = async ({
 		retiredPlayers
 			? {
 					retiredYear: season,
-			  }
+				}
 			: {
 					draftYear: season,
-			  },
+				},
 		"noCopyCache",
 	);
 
@@ -1515,7 +1529,13 @@ const generateFace = async (country: string | undefined) => {
 };
 
 const getAutoPos = (ratings: any) => {
-	return player.pos(ratings);
+	const boundedRatings = {
+		...ratings,
+	};
+	for (const key of RATINGS) {
+		boundedRatings[key] = player.limitRating(boundedRatings[key]);
+	}
+	return player.pos(boundedRatings);
 };
 
 const getDefaultInjuries = () => {
@@ -1624,6 +1644,47 @@ const getPlayerWatch = async (pid: number) => {
 	}
 
 	return 0;
+};
+
+const getProjectedAttendance = async ({
+	ticketPrice,
+	tid,
+}: {
+	ticketPrice: number;
+	tid: number;
+}) => {
+	if (Number.isNaN(ticketPrice)) {
+		return 0;
+	}
+
+	const teamSeasons = await idb.cache.teamSeasons.indexGetAll(
+		"teamSeasonsByTidSeason",
+		[
+			[tid, g.get("season") - 2],
+			[tid, g.get("season")],
+		],
+	);
+	const teamSeason = teamSeasons.at(-1);
+	if (!teamSeason) {
+		return 0;
+	}
+
+	const baseAttendance = getBaseAttendance({
+		hype: teamSeason.hype,
+		pop: teamSeason.pop,
+		playoffs: false,
+	});
+	const adjustedTicketPrice = getAdjustedTicketPrice(ticketPrice, false);
+	const attendance = await getActualAttendance({
+		baseAttendance,
+		randomize: false,
+		stadiumCapacity: teamSeason.stadiumCapacity,
+		teamSeasons,
+		tid: teamSeason.tid,
+		adjustedTicketPrice,
+	});
+
+	return attendance;
 };
 
 const getRandomCollege = async () => {
@@ -1759,16 +1820,13 @@ export const augmentOffers = async (offers: TradeTeams[]) => {
 		return [];
 	}
 
-	const teams = await idb.getCopies.teamsPlus(
-		{
-			attrs: ["abbrev", "region", "name", "strategy", "tid"],
-			seasonAttrs: ["won", "lost", "tied", "otl"],
-			season: g.get("season"),
-			addDummySeason: true,
-			active: true,
-		},
-		"noCopyCache",
-	);
+	const teams = await idb.getCopies.teamsPlus({
+		attrs: ["abbrev", "region", "name", "strategy", "tid"],
+		seasonAttrs: ["won", "lost", "tied", "otl"],
+		season: g.get("season"),
+		addDummySeason: true,
+		active: true,
+	});
 	const stats = bySport({
 		baseball: ["gp", "keyStats", "war"],
 		basketball: ["gp", "min", "pts", "trb", "ast", "per"],
@@ -1785,7 +1843,7 @@ export const augmentOffers = async (offers: TradeTeams[]) => {
 				throw new Error("No team found");
 			}
 
-			const formatPicks = async (dpids: number[]) => {
+			const formatPicks = async (tid: number, dpids: number[]) => {
 				let picks = await idb.getCopies.draftPicks(
 					{
 						tid,
@@ -1809,7 +1867,9 @@ export const augmentOffers = async (offers: TradeTeams[]) => {
 					"playersByTid",
 					tid,
 				);
-				playersAll = playersAll.filter(p => pids.includes(p.pid));
+				playersAll = playersAll.filter(
+					p => pids.includes(p.pid) && !isUntradable(p).untradable,
+				);
 				return addFirstNameShort(
 					await idb.getCopies.playersPlus(playersAll, {
 						attrs: [
@@ -1846,9 +1906,9 @@ export const augmentOffers = async (offers: TradeTeams[]) => {
 				pidsUser: offerRaw[0].pids,
 				dpidsUser: offerRaw[0].dpids,
 				payroll,
-				picks: await formatPicks(offerRaw[1].dpids),
+				picks: await formatPicks(tid, offerRaw[1].dpids),
 				players: await formatPlayers(tid, offerRaw[1].pids),
-				picksUser: await formatPicks(offerRaw[0].dpids),
+				picksUser: await formatPicks(g.get("userTid"), offerRaw[0].dpids),
 				playersUser: await formatPlayers(g.get("userTid"), offerRaw[0].pids),
 				summary: await getSummary(offerRaw),
 			};
@@ -1925,18 +1985,9 @@ const handleUploadedDraftClass = async ({
 	}
 
 	// Get scouting rank, which is used in a couple places below
-	const teamSeasons = await idb.cache.teamSeasons.indexGetAll(
-		"teamSeasonsByTidSeason",
-		[
-			[g.get("userTid"), g.get("season") - 2],
-			[g.get("userTid"), g.get("season")],
-		],
-	);
-	const scoutingRank = finances.getRankLastThree(
-		teamSeasons,
-		"expenses",
-		"scouting",
-	);
+	const scoutingLevel = await finances.getLevelLastThree("scouting", {
+		tid: g.get("userTid"),
+	});
 
 	// Delete old players from draft class
 	const oldPlayers = await idb.cache.players.indexGetAll(
@@ -1982,7 +2033,7 @@ const handleUploadedDraftClass = async ({
 		// Make sure player object is fully defined
 		const p2 = await player.augmentPartialPlayer(
 			p,
-			scoutingRank,
+			scoutingLevel,
 			uploadedFile.version,
 		);
 		p2.draft.year = draftYear;
@@ -1994,13 +2045,13 @@ const handleUploadedDraftClass = async ({
 			delete p2.pid;
 		}
 
-		await player.updateValues(p);
+		await player.updateValues(p2);
 
 		await idb.cache.players.add(p2);
 	}
 
 	// "Top off" the draft class if not enough players imported
-	await draft.genPlayers(draftYear, scoutingRank);
+	await draft.genPlayers(draftYear, scoutingLevel);
 
 	await toUI("realtimeUpdate", [["playerMovement"]]);
 };
@@ -2043,7 +2094,7 @@ const importPlayers = async ({
 			born: p.born,
 			college: p.college,
 			contract: {
-				amount: parseFloat(contractAmount) * 1000,
+				amount: helpers.localeParseFloat(contractAmount) * 1000,
 				exp: parseInt(contractExp),
 			},
 			draft: {
@@ -2148,11 +2199,9 @@ const importPlayers = async ({
 			player.setContract(p2, p2.contract, tid >= 0);
 		}
 
-		const scoutingRank = (g.get("numActiveTeams") + 1) / 2;
-
 		const p3 = await player.augmentPartialPlayer(
 			p2,
-			scoutingRank,
+			DEFAULT_LEVEL,
 			leagueFile.version,
 		);
 		await player.updateValues(p3);
@@ -2217,8 +2266,8 @@ const loadRetiredPlayers = async () => {
 		pid: number;
 		firstName: string;
 		lastName: string;
-		firstSeason: number | undefined;
-		lastSeason: number | undefined;
+		firstSeason: number;
+		lastSeason: number;
 	}[] = [];
 
 	await iterate(
@@ -2357,13 +2406,8 @@ const ratingsStatsPopoverInfo = async ({
 		if (draftProspect) {
 			p2.ratings = p2.ratings[0];
 		} else {
-			let peakRatings;
-			for (const row of p2.ratings) {
-				if (!peakRatings || row.ovr > peakRatings.ovr) {
-					peakRatings = row;
-				}
-			}
-			p2.ratings = peakRatings;
+			// Peak ratings
+			p2.ratings = maxBy(p.ratings, "ovr");
 		}
 		p2.age = p2.ratings.season - p.born.year;
 
@@ -2437,15 +2481,12 @@ const regenerateDraftClass = async (season: number, conditions: Conditions) => {
 };
 
 const regenerateSchedule = async (param: unknown, conditions: Conditions) => {
-	const teams = await idb.getCopies.teamsPlus(
-		{
-			attrs: ["tid"],
-			seasonAttrs: ["cid", "did"],
-			season: g.get("season"),
-			active: true,
-		},
-		"noCopyCache",
-	);
+	const teams = await idb.getCopies.teamsPlus({
+		attrs: ["tid"],
+		seasonAttrs: ["cid", "did"],
+		season: g.get("season"),
+		active: true,
+	});
 
 	const newSchedule = season.newSchedule(teams, {
 		notify: true,
@@ -2486,6 +2527,22 @@ const releasePlayer = async ({
 		type: "dummyExpiringContracts",
 		pids: [p.pid],
 	});
+};
+
+const expandVote = (
+	params: { override: boolean; userVote: boolean },
+	conditions: Conditions,
+) => {
+	return team.expandVote(params, conditions);
+};
+
+const relocateVote = (params: {
+	override: boolean;
+	realign: boolean;
+	rebrandTeam: boolean;
+	userVote: boolean;
+}) => {
+	return team.relocateVote(params);
 };
 
 const removeLastTeam = async () => {
@@ -2923,10 +2980,10 @@ const setGOATFormula = async ({
 			? {
 					type,
 					season: g.get("season"),
-			  }
+				}
 			: {
 					type,
-			  },
+				},
 	);
 
 	if (type === "career") {
@@ -3163,11 +3220,11 @@ const uiUpdateLocal = async (obj: Partial<LocalStateUI>) => {
 };
 
 const updateBudget = async ({
-	budgetAmounts,
+	budgetLevels,
 	adjustForInflation,
 	autoTicketPrice,
 }: {
-	budgetAmounts: {
+	budgetLevels: {
 		coaching: number;
 		facilities: number;
 		health: number;
@@ -3184,22 +3241,21 @@ const updateBudget = async ({
 		throw new Error("Invalid tid");
 	}
 
-	for (const key of helpers.keys(budgetAmounts)) {
+	for (const key of helpers.keys(budgetLevels)) {
 		// Check for NaN before updating
-		if (budgetAmounts[key] === budgetAmounts[key]) {
-			t.budget[key].amount = budgetAmounts[key];
+		if (budgetLevels[key] === budgetLevels[key]) {
+			t.budget[key] = budgetLevels[key];
 		}
 	}
 
 	if (autoTicketPrice && t.autoTicketPrice === false) {
-		t.budget.ticketPrice.amount = await getAutoTicketPriceByTid(userTid);
+		t.budget.ticketPrice = await getAutoTicketPriceByTid(userTid);
 	}
 
 	t.adjustForInflation = adjustForInflation;
 	t.autoTicketPrice = autoTicketPrice;
 
 	await idb.cache.teams.put(t);
-	await finances.updateRanks(["budget"]);
 	await toUI("realtimeUpdate", [["teamFinances"]]);
 };
 
@@ -3221,68 +3277,11 @@ const updateConfsDivs = async ({
 		}
 	}
 
-	// Second, update any teams belonging to a deleted division
-	const teams = await idb.cache.teams.getAll();
-	for (const t of teams) {
-		const div = divs.find(d => d.did === t.did);
-		const conf = confs.find(c => c.cid === t.cid);
-		const divMatchesConf = div && conf ? conf.cid === div.cid : false;
-
-		if (divMatchesConf) {
-			// No update needed
-			continue;
-		}
-
-		let newDid: number | undefined;
-		let newCid: number | undefined;
-
-		if (div) {
-			// Move to correct conference based on did
-			newCid = div.cid;
-		} else if (conf) {
-			// Put in last division of conference, if possible
-			const potentialDivs = divs.filter(d => d.cid === conf.cid);
-			if (potentialDivs.length > 0) {
-				newDid = potentialDivs.at(-1)!.did;
-			}
-		}
-
-		// If this hasn't resulted in a newCid or newDid, we need to pick a new one
-		if (newDid === undefined && newCid === undefined) {
-			const newDiv = divs.at(-1)!;
-			newDid = newDiv.did;
-			newCid = newDiv.cid;
-		}
-
-		if (newDid !== undefined) {
-			t.did = newDid;
-		}
-		if (newCid !== undefined) {
-			t.cid = newCid;
-		}
-		await idb.cache.teams.put(t);
-
-		if (g.get("phase") < PHASE.PLAYOFFS) {
-			const teamSeason = await idb.cache.teamSeasons.indexGet(
-				"teamSeasonsByTidSeason",
-				[t.tid, g.get("season")],
-			);
-
-			if (teamSeason) {
-				// Also apply team info changes to this season
-				if (newDid !== undefined) {
-					teamSeason.did = newDid;
-				}
-				if (newCid !== undefined) {
-					teamSeason.cid = newCid;
-				}
-
-				await idb.cache.teamSeasons.put(teamSeason);
-			}
-		}
-	}
-
 	await league.setGameAttributes({ confs, divs });
+
+	// Second, update any teams belonging to a deleted division
+	await team.ensureValidDivsConfs();
+
 	await toUI("realtimeUpdate", [["gameAttributes"]]);
 };
 
@@ -3315,27 +3314,17 @@ const updateGameAttributesGodMode = async (
 		"repeatSeason",
 	);
 
+	const currentRepeatSeasonType = g.get("repeatSeason")?.type ?? "disabled";
 	const repeatSeason = settings.repeatSeason;
-	let initRepeatSeason = false;
-	if (typeof repeatSeason === "boolean") {
-		const prevRepeatSeason = g.get("repeatSeason");
-		if (prevRepeatSeason && !repeatSeason) {
-			// Disable Groundhog Day
-			gameAttributes.repeatSeason = undefined;
-		} else if (!prevRepeatSeason && repeatSeason) {
-			// Enable Groundhog Day
-			if (g.get("phase") < 0 || g.get("phase") > PHASE.DRAFT_LOTTERY) {
-				throw new Error("Groundhog Day can only be enabled before the draft");
-			}
-			initRepeatSeason = true;
 
-			// Will be enabled later, don't pass through a boolean
-			delete gameAttributes.repeatSeason;
-		} else {
-			// No change, don't pass through a boolean
-			delete gameAttributes.repeatSeason;
+	if (repeatSeason !== "disabled" && repeatSeason !== currentRepeatSeasonType) {
+		if (g.get("phase") < 0 || g.get("phase") > PHASE.DRAFT_LOTTERY) {
+			throw new Error("Groundhog Day can only be enabled before the draft");
 		}
 	}
+
+	// Will be handled in setRepeatSeason, don't pass through a string
+	delete gameAttributes.repeatSeason;
 
 	// Check schedule, unless it'd be too slow
 	const teams = (await idb.cache.teams.getAll()).filter(t => !t.disabled);
@@ -3356,8 +3345,9 @@ const updateGameAttributesGodMode = async (
 	}
 
 	await league.setGameAttributes(gameAttributes);
-	if (initRepeatSeason) {
-		await league.initRepeatSeason();
+
+	if (repeatSeason !== currentRepeatSeasonType) {
+		await league.setRepeatSeason(repeatSeason);
 	}
 
 	await idb.cache.flush();
@@ -3572,7 +3562,10 @@ const updatePlayerWatch = async ({
 		p = await idb.league.get("players", pid);
 	}
 	if (p) {
-		if (watch < 1 || watch > g.get("numWatchColors")) {
+		if (
+			watch < 1 ||
+			(!local.exhibitionGamePlayers && watch > g.get("numWatchColors"))
+		) {
 			delete p.watch;
 		} else {
 			p.watch = watch;
@@ -3716,7 +3709,7 @@ const updateTeamInfo = async (
 		t.colors = newTeam.colors;
 		t.jersey = newTeam.jersey;
 
-		t.pop = parseFloat(newTeam.pop as string);
+		t.pop = helpers.localeParseFloat(newTeam.pop as string);
 		t.stadiumCapacity = parseInt(newTeam.stadiumCapacity as string);
 
 		const disableTeam = newTeam.disabled && !t.disabled;
@@ -3890,7 +3883,7 @@ const upsertCustomizedPlayer = async (
 	// If player was retired, add ratings (but don't develop, because that would change ratings)
 	if (originalTid === PLAYER.RETIRED && p.tid !== PLAYER.RETIRED) {
 		if (g.get("season") - p.ratings[r].season > 0) {
-			player.addRatingsRow(p, 15);
+			player.addRatingsRow(p);
 		}
 	}
 
@@ -4112,14 +4105,11 @@ const proposeTrade = async (forceTrade: boolean, conditions: Conditions) => {
 		let assetsText;
 		const numAssets = teams[0].pids.length + teams[0].dpids.length;
 		if (teams[0].pids.length === 0) {
-			assetsText = "Pick";
+			assetsText = helpers.plural("Pick", numAssets);
 		} else if (teams[0].dpids.length === 0) {
-			assetsText = "Player";
+			assetsText = helpers.plural("Player", numAssets);
 		} else {
-			assetsText = "Asset";
-		}
-		if (numAssets !== 1) {
-			assetsText += "s";
+			assetsText = helpers.plural("Asset", numAssets);
 		}
 
 		const proceed = await toUI(
@@ -4220,6 +4210,39 @@ const validatePlayoffSettings = async ({
 	});
 };
 
+const getSavedTrade = async (hash: string) => {
+	const value = await idb.cache.savedTrades.get(hash);
+
+	// Use 1 and 0 rather than boolean for consistency with watch list, and in case we want to add more trade lists in the future
+	return value ? 1 : 0;
+};
+
+const setSavedTrade = async ({
+	saved,
+	hash,
+	tid,
+}: {
+	saved: number;
+	hash: string;
+	tid: number;
+}) => {
+	if (saved !== 0) {
+		await idb.cache.savedTrades.put({ hash, tid });
+	} else {
+		await idb.cache.savedTrades.delete(hash);
+	}
+
+	await toUI("realtimeUpdate", [["savedTrades"]]);
+};
+
+const clearSavedTrades = async (hashes: string[]) => {
+	for (const hash of hashes) {
+		await idb.cache.savedTrades.delete(hash);
+	}
+
+	await toUI("realtimeUpdate", [["savedTrades"]]);
+};
+
 export default {
 	actions,
 	exhibitionGame,
@@ -4241,8 +4264,9 @@ export default {
 		cancelContractNegotiation,
 		checkAccount: checkAccount2,
 		checkParticipationAchievement,
-		clearTrade,
 		clearInjuries,
+		clearSavedTrades,
+		clearTrade,
 		clearWatchList,
 		countNegotiations,
 		createLeague,
@@ -4276,12 +4300,14 @@ export default {
 		getLocal,
 		getPlayerBioInfoDefaults,
 		getPlayerWatch,
+		getProjectedAttendance,
 		getRandomCollege,
 		getRandomCountry,
 		getRandomJerseyNumber,
 		getRandomName,
 		getRandomRatings,
 		getRandomTeams,
+		getSavedTrade,
 		getTradingBlockOffers,
 		ping,
 		handleUploadedDraftClass,
@@ -4299,6 +4325,8 @@ export default {
 		regenerateDraftClass,
 		regenerateSchedule,
 		releasePlayer,
+		expandVote,
+		relocateVote,
 		cloneLeague,
 		removeLeague,
 		removePlayers,
@@ -4313,6 +4341,7 @@ export default {
 		setGOATFormula,
 		setLocal,
 		setPlayerNote,
+		setSavedTrade,
 		sign,
 		updateExpansionDraftSetup,
 		advanceToPlayerProtection,

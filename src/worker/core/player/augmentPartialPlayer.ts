@@ -35,7 +35,7 @@ const addStatsRowWrapped = async (
  */
 const augmentPartialPlayer = async (
 	p: any,
-	scoutingRank: number,
+	scoutingLevel: number,
 	version: number | undefined,
 	ignoreJerseyNumberConflicts?: boolean,
 ): Promise<Player<MinimalPlayerRatings>> => {
@@ -65,7 +65,7 @@ const augmentPartialPlayer = async (
 		age,
 		g.get("startingSeason") - (age - 18),
 		true,
-		scoutingRank,
+		scoutingLevel,
 		await name(),
 	);
 
@@ -208,7 +208,7 @@ const augmentPartialPlayer = async (
 	}
 
 	// Height rescaling
-	if (version === undefined || version <= 23) {
+	if (isSport("basketball") && (version === undefined || version <= 23)) {
 		for (const r of p.ratings) {
 			r.hgt = heightToRating(p.hgt);
 		}

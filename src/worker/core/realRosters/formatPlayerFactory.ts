@@ -1,7 +1,7 @@
 import loadStatsBasketball, {
 	type BasketballStats,
 } from "./loadStats.basketball";
-import { helpers, PHASE, PLAYER } from "../../../common";
+import { PHASE, PLAYER } from "../../../common";
 import type {
 	GetLeagueOptions,
 	PlayerContract,
@@ -14,6 +14,8 @@ import nerfDraftProspect from "./nerfDraftProspect";
 import oldAbbrevTo2020BBGMAbbrev from "./oldAbbrevTo2020BBGMAbbrev";
 import setDraftProspectRatingsBasedOnDraftPosition from "./setDraftProspectRatingsBasedOnDraftPosition";
 import { getEWA } from "../../util/advStats.basketball";
+import { averageSalary } from "./averageSalary";
+import { helpers } from "../../util";
 
 const MINUTES_PER_GAME = 48;
 
@@ -60,14 +62,10 @@ const formatPlayerFactory = async (
 		ratingsInput: Ratings[] | Ratings,
 		{
 			draftProspect,
-			legends,
 			hasQueens,
-			randomDebuts,
 		}: {
 			draftProspect?: boolean;
-			legends?: boolean;
 			hasQueens?: boolean;
-			randomDebuts?: boolean;
 		} = {},
 	) => {
 		const allRatings = Array.isArray(ratingsInput)
@@ -85,6 +83,8 @@ const formatPlayerFactory = async (
 
 		// For alexnoob draft prospects who already have their draft ratings set for the correct season, as opposed to other rookies who need them set based on their rookie ratings
 		const draftRatingsAlreadySet = bio.draftYear === ratings.season;
+
+		const legends = options.type === "legends";
 
 		let draft;
 		if (draftProspect || legends) {
@@ -206,12 +206,12 @@ const formatPlayerFactory = async (
 		let contract: PlayerContract | undefined;
 		let awards;
 		let salaries;
-		if (legends) {
+		if (options.type === "legends") {
 			contract = {
 				amount: 6000,
 				exp: season + 3,
 			};
-		} else if (!randomDebuts) {
+		} else if (!options.randomDebuts || options.randomDebutsKeepCurrent) {
 			const salaryRows = basketball.salaries.filter(row => {
 				if (row.slug !== slug) {
 					return false;
@@ -245,14 +245,12 @@ const formatPlayerFactory = async (
 				}
 
 				if (salaryRow) {
+					// Bound at 5 year contract
+					const exp = Math.min(salaryRow.exp, season + 4);
 					contract = {
-						amount: salaryRow.amount / 1000,
-						exp: salaryRow.exp,
+						amount: averageSalary(salaryRow, season, exp),
+						exp,
 					};
-					if (contract.exp > season + 4) {
-						// Bound at 5 year contract
-						contract.exp = season + 4;
-					}
 
 					if (salaryRow.start === draft.year + 1) {
 						contract.rookie = true;
@@ -263,11 +261,23 @@ const formatPlayerFactory = async (
 				salaries = [];
 				for (const row of salaryRows) {
 					const maxSeason = Math.min(row.exp, maxSalaryHistorySeason);
-					for (let season = row.start; season <= maxSeason; season++) {
-						salaries.push({
-							amount: row.amount / 1000,
-							season,
-						});
+
+					for (let season2 = row.start; season2 <= maxSeason; season2++) {
+						if (contract && row === salaryRow && season2 >= season) {
+							// Current contract, use averageSalary output from above for current season or later
+							salaries.push({
+								amount: contract.amount,
+								season: season2,
+							});
+						} else {
+							const i = season2 - row.start;
+
+							// Historical salary, use exact value every year
+							salaries.push({
+								amount: helpers.roundContract(row.amounts[i] / 1000),
+								season: season2,
+							});
+						}
 					}
 				}
 			}

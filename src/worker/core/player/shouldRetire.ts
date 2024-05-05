@@ -5,14 +5,51 @@ import type {
 	Player,
 	PlayerWithoutKey,
 } from "../../../common/types"; // Players meeting one of these cutoffs might retire
+import { range } from "../../../common/utils";
+
+const checkforceRetireSeasons = (p: PlayerWithoutKey<MinimalPlayerRatings>) => {
+	// No redshirt seasons before league was created, since we have no stats then
+	const firstPossibleRedshirtSeason = Math.max(
+		g.get("startingSeason"),
+		p.draft.year + 1,
+	);
+
+	// Initialize with all possible seasons played, in case a player was unsigned an entire year so there is no entry in p.stats
+	const redshirtSeasons = new Set(
+		range(firstPossibleRedshirtSeason, g.get("season") + 1),
+	);
+
+	// If a season has games played, it can't be a redshirt season
+	for (const row of p.stats) {
+		if (row.gp > 0) {
+			redshirtSeasons.delete(row.season);
+		}
+	}
+
+	const NUM_REDSHIRT_YEARS_ALLOWED = 1;
+	const numRedshirtSeasons = Math.min(
+		NUM_REDSHIRT_YEARS_ALLOWED,
+		redshirtSeasons.size,
+	);
+	const numSeasonsInLeague = g.get("season") - p.draft.year;
+
+	return numSeasonsInLeague - numRedshirtSeasons >= g.get("forceRetireSeasons");
+};
 
 const shouldRetire = (
 	p: Player<MinimalPlayerRatings> | PlayerWithoutKey<MinimalPlayerRatings>,
 ): boolean => {
-	const age = g.get("season") - p.born.year;
-
+	const season = g.get("season");
 	const forceRetireAge = g.get("forceRetireAge");
+	const forceRetireSeasons = g.get("forceRetireSeasons");
+
+	const age = season - p.born.year;
+
 	if (forceRetireAge >= g.get("draftAges")[1] && age >= forceRetireAge) {
+		return true;
+	}
+
+	if (forceRetireSeasons > 0 && checkforceRetireSeasons(p)) {
 		return true;
 	}
 

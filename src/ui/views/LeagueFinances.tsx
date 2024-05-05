@@ -25,15 +25,13 @@ const LeagueFinances = ({
 		dropdownFields: { seasons: season },
 	});
 
-	// Since we don't store historical salary cap data, only show cap space for current season
-	const showCapSpace = season === currentSeason;
 	const showCapSpaceForReal = salaryCapType !== "none";
 
 	let capSpaceColNames: string[] = [];
-	if (showCapSpace && showCapSpaceForReal) {
-		capSpaceColNames = ["Cap Space", "Roster Spots", "Strategy", "Trade"];
-	} else if (showCapSpace) {
-		capSpaceColNames = ["Roster Spots", "Strategy", "Trade"];
+	if (showCapSpaceForReal) {
+		capSpaceColNames = ["Cap Space"];
+	} else {
+		capSpaceColNames = [];
 	}
 
 	// Same for ticket price
@@ -44,12 +42,19 @@ const LeagueFinances = ({
 				"Team",
 				"Pop",
 				"Avg Attendance",
-				...(showTicketPrice ? ["Ticket Price"] : []),
+				"Ticket Price",
 				"Revenue (YTD)",
 				"Profit (YTD)",
 				"Cash",
 				"Payroll",
 				...capSpaceColNames,
+				"Roster Spots",
+				"Strategy",
+				"Trade",
+				"Scouting",
+				"Coaching",
+				"Health",
+				"Facilities",
 		  ])
 		: getCols([
 				"Team",
@@ -57,6 +62,9 @@ const LeagueFinances = ({
 				"Avg Attendance",
 				"Payroll",
 				...capSpaceColNames,
+				"Roster Spots",
+				"Strategy",
+				"Trade",
 		  ]);
 
 	const rows = teams.map(t => {
@@ -76,11 +84,11 @@ const LeagueFinances = ({
 			),
 			helpers.numberWithCommas(Math.round(t.seasonAttrs.pop * 1000000)),
 			helpers.numberWithCommas(Math.round(t.seasonAttrs.att)),
-			...(showTicketPrice
-				? [helpers.formatCurrency(t.budget.ticketPrice.amount, "", 2)]
-				: []),
 			...(budget
 				? [
+						showTicketPrice
+							? helpers.formatCurrency(t.budget.ticketPrice, "")
+							: null,
 						helpers.formatCurrency(t.seasonAttrs.revenue, "M"),
 						helpers.formatCurrency(t.seasonAttrs.profit, "M"),
 						helpers.formatCurrency(t.seasonAttrs.cash, "M"),
@@ -89,23 +97,37 @@ const LeagueFinances = ({
 			helpers.formatCurrency(payroll, "M"),
 		];
 
-		if (showCapSpace) {
+		// Since we don't store historical salary cap data, only show cap space for current season
+		if (season === currentSeason) {
 			if (showCapSpaceForReal) {
 				data.push(helpers.formatCurrency(salaryCap - payroll, "M"));
 			}
 			data.push(t.rosterSpots);
 			data.push(helpers.upperCaseFirstLetter(t.strategy));
-			data.push(
-				<button
-					className="btn btn-light-bordered btn-xs"
-					onClick={async () => {
-						await toWorker("actions", "tradeFor", { tid: t.seasonAttrs.tid });
-					}}
-				>
-					Trade With
-				</button>,
-			);
+		} else {
+			if (showCapSpaceForReal) {
+				data.push(null);
+			}
+			data.push(null, null);
 		}
+
+		data.push(
+			<button
+				className="btn btn-light-bordered btn-xs"
+				onClick={async () => {
+					await toWorker("actions", "tradeFor", { tid: t.seasonAttrs.tid });
+				}}
+			>
+				Trade With
+			</button>,
+		);
+
+		data.push(
+			t.seasonAttrs.expenseLevels.scouting,
+			t.seasonAttrs.expenseLevels.coaching,
+			t.seasonAttrs.expenseLevels.health,
+			t.seasonAttrs.expenseLevels.facilities,
+		);
 
 		return {
 			key: t.tid,

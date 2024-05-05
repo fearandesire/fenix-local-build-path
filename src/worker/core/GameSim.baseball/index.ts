@@ -10,6 +10,10 @@ import getInjuryRate from "../GameSim.basketball/getInjuryRate";
 import Team from "./Team";
 import { fatigueFactor } from "./fatigueFactor";
 import { infoDefense } from "../player/ovr.baseball";
+import GameSimBase from "../GameSimBase";
+import getWinner from "../../../common/getWinner";
+import { maxBy } from "../../../common/utils";
+import { choice } from "../../../common/random";
 
 const teamNums: [TeamNum, TeamNum] = [0, 1];
 
@@ -25,20 +29,12 @@ type OccupiedBase = {
 
 // self.hrTypes = {};
 
-class GameSim {
-	id: number;
-
-	day: number | undefined;
-
+class GameSim extends GameSimBase {
 	team: [Team<boolean>, Team<boolean>];
 
 	numInnings: number;
 
 	inning: number;
-
-	overtime: boolean;
-
-	overtimes: number;
 
 	bases!: [
 		OccupiedBase | undefined,
@@ -66,9 +62,6 @@ class GameSim {
 	winEligiblePid: number | undefined;
 	lossEligiblePid: number | undefined;
 
-	allStarGame: boolean;
-	baseInjuryRate: number;
-
 	constructor({
 		gid,
 		day,
@@ -90,11 +83,14 @@ class GameSim {
 		baseInjuryRate: number;
 		disableHomeCourtAdvantage?: boolean;
 	}) {
+		super({
+			gid,
+			day,
+			allStarGame,
+			baseInjuryRate,
+		});
+
 		this.playByPlay = new PlayByPlayLogger(doPlayByPlay);
-		this.id = gid;
-		this.day = day;
-		this.allStarGame = allStarGame;
-		this.baseInjuryRate = baseInjuryRate;
 
 		// If a team plays twice in a day, this needs to be a deep copy
 		this.team = [
@@ -113,8 +109,6 @@ class GameSim {
 		this.numInnings = g.get("numPeriods");
 
 		this.inning = 1;
-		this.overtime = false;
-		this.overtimes = 0;
 
 		this.resetNewInning();
 
@@ -183,15 +177,30 @@ class GameSim {
 			if (distance === "infield") {
 				switch (direction) {
 					case "farLeft":
-						return POS_NUMBERS["3B"];
+						return random.choice(
+							[POS_NUMBERS.C, POS_NUMBERS.P, POS_NUMBERS["3B"]],
+							[0.05, 0.05, 0.9],
+						);
 					case "farRight":
-						return POS_NUMBERS["1B"];
+						return random.choice(
+							[POS_NUMBERS.C, POS_NUMBERS.P, POS_NUMBERS["1B"]],
+							[0.05, 0.05, 0.9],
+						);
 					case "middle":
-						return POS_NUMBERS.CF;
+						return random.choice(
+							[POS_NUMBERS.C, POS_NUMBERS.P, POS_NUMBERS["2B"], POS_NUMBERS.SS],
+							[0.05, 0.05, 0.45, 0.45],
+						);
 					case "left":
-						return random.choice([POS_NUMBERS.LF, POS_NUMBERS.CF]);
+						return random.choice(
+							[POS_NUMBERS.C, POS_NUMBERS.P, POS_NUMBERS.LF, POS_NUMBERS.SS],
+							[0.05, 0.05, 0.5, 0.4],
+						);
 					case "right":
-						return random.choice([POS_NUMBERS.RF, POS_NUMBERS.CF]);
+						return random.choice(
+							[POS_NUMBERS.C, POS_NUMBERS.P, POS_NUMBERS.RF, POS_NUMBERS["2B"]],
+							[0.05, 0.05, 0.5, 0.4],
+						);
 				}
 			} else {
 				switch (direction) {
@@ -241,7 +250,10 @@ class GameSim {
 					case "farRight":
 						return POS_NUMBERS["1B"];
 					case "middle":
-						return random.choice([POS_NUMBERS["2B"], POS_NUMBERS.SS]);
+						return random.choice(
+							[POS_NUMBERS.P, POS_NUMBERS["2B"], POS_NUMBERS.SS],
+							[0.02, 0.49, 0.49],
+						);
 					case "left":
 						return random.choice([POS_NUMBERS["3B"], POS_NUMBERS.SS]);
 					case "right":
@@ -278,15 +290,35 @@ class GameSim {
 			} else {
 				switch (direction) {
 					case "farLeft":
-						return POS_NUMBERS["3B"];
+						return random.choice(
+							[POS_NUMBERS.C, POS_NUMBERS.P, POS_NUMBERS["3B"]],
+							[0.05, 0.05, 0.9],
+						);
 					case "farRight":
-						return POS_NUMBERS["1B"];
+						return random.choice(
+							[POS_NUMBERS.C, POS_NUMBERS.P, POS_NUMBERS["1B"]],
+							[0.05, 0.05, 0.9],
+						);
 					case "middle":
-						return random.choice([POS_NUMBERS["2B"], POS_NUMBERS.SS]);
+						return random.choice(
+							[POS_NUMBERS.C, POS_NUMBERS.P, POS_NUMBERS["2B"], POS_NUMBERS.SS],
+							[0.05, 0.05, 0.45, 0.45],
+						);
 					case "left":
-						return random.choice([POS_NUMBERS["3B"], POS_NUMBERS.SS]);
+						return random.choice(
+							[POS_NUMBERS.C, POS_NUMBERS.P, POS_NUMBERS["3B"], POS_NUMBERS.SS],
+							[0.05, 0.05, 0.2, 0.7],
+						);
 					case "right":
-						return random.choice([POS_NUMBERS["2B"], POS_NUMBERS["1B"]]);
+						return random.choice(
+							[
+								POS_NUMBERS.C,
+								POS_NUMBERS.P,
+								POS_NUMBERS["1B"],
+								POS_NUMBERS["2B"],
+							],
+							[0.05, 0.05, 0.2, 0.7],
+						);
 				}
 			}
 		}
@@ -319,11 +351,11 @@ class GameSim {
 			? random.choice(
 					["farLeftFoul", "farRightFoul", "outOfPlay"] as const,
 					[1.5, 0.5, 1],
-			  )
+				)
 			: random.choice(
 					["farLeft", "left", "middle", "right", "farRight"] as const,
 					[1.5, 2, 1.5, 1, 0.5],
-			  );
+				);
 
 		let speed;
 		let distance;
@@ -341,7 +373,6 @@ class GameSim {
 				speed = random.choice(["soft", "normal", "hard"] as const);
 				this.playByPlay.logEvent({
 					type,
-					t: this.o,
 					pid: p.id,
 					direction,
 					speed,
@@ -363,7 +394,6 @@ class GameSim {
 				]);
 				this.playByPlay.logEvent({
 					type,
-					t: this.o,
 					pid: p.id,
 					direction,
 					speed,
@@ -390,7 +420,6 @@ class GameSim {
 				);
 				this.playByPlay.logEvent({
 					type,
-					t: this.o,
 					pid: p.id,
 					direction,
 					distance,
@@ -902,9 +931,9 @@ class GameSim {
 		this.recordStat(this.d, p, stat);
 		this.playByPlay.logEvent({
 			type,
-			t: this.d,
 			pid: p.id,
 			runners: this.finalizeRunners(runners),
+			t: this.d,
 			...this.getSportState(),
 		});
 	}
@@ -1561,22 +1590,25 @@ class GameSim {
 	simPitch() {
 		let doneBatter;
 
-		if (this.bases.some(p => p) && Math.random() < this.probBalk()) {
-			this.doBalkWildPitchPassedBall("balk");
+		const atLeastOneRunnerOnBase = this.bases.some(p => p);
+		let wildPitchPassedBall: "wildPitch" | "passedBall" | undefined;
+		if (atLeastOneRunnerOnBase) {
+			if (Math.random() < this.probBalk()) {
+				this.doBalkWildPitchPassedBall("balk");
 
-			if (this.gameIsOverDuringInning()) {
-				// End the game mid at bat
-				doneBatter = true;
+				if (this.gameIsOverDuringInning()) {
+					// End the game mid at bat
+					doneBatter = true;
+				}
+
+				return doneBatter;
 			}
 
-			return doneBatter;
-		}
-
-		let wildPitchPassedBall: "wildPitch" | "passedBall" | undefined;
-		if (Math.random() < this.probWildPitch()) {
-			wildPitchPassedBall = "wildPitch";
-		} else if (Math.random() < this.probPassedBall()) {
-			wildPitchPassedBall = "passedBall";
+			if (Math.random() < this.probWildPitch()) {
+				wildPitchPassedBall = "wildPitch";
+			} else if (Math.random() < this.probPassedBall()) {
+				wildPitchPassedBall = "passedBall";
+			}
 		}
 
 		if (wildPitchPassedBall) {
@@ -1840,11 +1872,11 @@ class GameSim {
 					this.playByPlay.logEvent({
 						type: "hitResult",
 						result: "error",
-						t: this.o,
 						pid: batter.id,
 						pidError,
 						posDefense,
 						runners: this.finalizeRunners(runners),
+						t: this.o,
 						numBases,
 						outAtNextBase: false,
 						...this.getSportState(),
@@ -1876,10 +1908,10 @@ class GameSim {
 					this.playByPlay.logEvent({
 						type: "hitResult",
 						result,
-						t: this.o,
 						pid: batter.id,
 						posDefense,
 						runners: this.finalizeRunners(runners),
+						t: this.o,
 						numBases,
 						outAtNextBase: false,
 						...this.getSportState(),
@@ -1997,9 +2029,9 @@ class GameSim {
 			this.playByPlay.logEvent({
 				type: "walk",
 				intentional: type === "intentional",
-				t: this.o,
 				pid: p.id,
 				runners: this.finalizeRunners(runners),
+				t: this.o,
 				...this.getSportState(),
 			});
 		} else {
@@ -2007,9 +2039,9 @@ class GameSim {
 			this.recordStat(this.d, pitcher, "hbpPit");
 			this.playByPlay.logEvent({
 				type: "hitByPitch",
-				t: this.o,
 				pid: p.id,
 				runners: this.finalizeRunners(runners),
+				t: this.o,
 				...this.getSportState(),
 			});
 		}
@@ -2095,7 +2127,13 @@ class GameSim {
 	}
 
 	run() {
-		this.simGame();
+		let gameOver = false;
+		while (!gameOver) {
+			gameOver = this.simSide();
+		}
+
+		this.doShootout();
+
 		this.playByPlay.logEvent({
 			type: "gameOver",
 		});
@@ -2128,10 +2166,10 @@ class GameSim {
 				}
 			}
 
-			const teamWon = this.team[t].t.stat.pts > this.team[t2].t.stat.pts;
+			const winner = getWinner([this.team[0].t.stat, this.team[1].t.stat]);
 			const saveOutsNeeded = this.team[t].saveOutsNeeded;
 			if (
-				teamWon &&
+				winner === t &&
 				pitcher.id !== this.winEligiblePid &&
 				saveOutsNeeded !== undefined &&
 				pitcher.stat.outs >= saveOutsNeeded
@@ -2195,6 +2233,108 @@ class GameSim {
 		return out;
 	}
 
+	doShootoutShot(t: TeamNum, p: PlayerGameSim, pitcher: PlayerGameSim) {
+		// 20% to 80%
+		const probMake = p.compositeRating.powerHitter * 0.6 + 0.2;
+
+		const made = Math.random() < probMake;
+
+		this.recordStat(t, undefined, "sAtt");
+		if (made) {
+			this.recordStat(t, undefined, "sPts");
+		}
+
+		this.playByPlay.logEvent({
+			type: "shootoutShot",
+			t: t,
+			pid: p.id,
+			pitcherPid: pitcher.id,
+			att: this.team[t].t.stat.sAtt,
+			made,
+			flavor: choice([0, 1, 2, 3], [1, 1, 2, 6]),
+		});
+	}
+
+	doShootout() {
+		if (
+			this.shootoutRounds <= 0 ||
+			this.team[0].t.stat.pts !== this.team[1].t.stat.pts
+		) {
+			return;
+		}
+
+		this.shootout = true;
+		this.team[0].t.stat.sPts = 0;
+		this.team[0].t.stat.sAtt = 0;
+		this.team[1].t.stat.sPts = 0;
+		this.team[1].t.stat.sAtt = 0;
+
+		this.playByPlay.logEvent({
+			type: "shootoutStart",
+			rounds: this.shootoutRounds,
+		});
+
+		const hitters = teamNums.map(t => {
+			// Find best hitter - slight bias towards high usage players
+			return maxBy(
+				this.team[t].t.player,
+				p =>
+					p.compositeRating.powerHitter +
+					0.2 * p.compositeRating.contactHitter -
+					(p.injured ? 1000 : 0),
+			)!;
+		}) as [PlayerGameSim, PlayerGameSim];
+
+		const pitchers = teamNums.map(t => {
+			const candidate = this.team[t].getBestReliefPitcher(false);
+			if (candidate) {
+				return candidate.p;
+			}
+
+			// Probably will never happen, but just in case
+			return random.choice(this.team[t].depth.pitchers)!;
+		}) as [PlayerGameSim, PlayerGameSim];
+
+		const reversedTeamNums = [1, 0] as const;
+
+		for (const t of reversedTeamNums) {
+			const hitter = hitters[t];
+			const pitcher = pitchers[t];
+
+			this.playByPlay.logEvent({
+				type: "shootoutTeam",
+				t: t,
+				pid: hitter.id,
+				pitcherPid: pitcher.id,
+			});
+
+			for (let i = 0; i < this.shootoutRounds; i++) {
+				if (
+					this.shouldEndShootoutEarly(t, i, [
+						this.team[0].t.stat.sPts,
+						this.team[1].t.stat.sPts,
+					])
+				) {
+					break;
+				}
+
+				this.doShootoutShot(t, hitter, pitcher);
+			}
+		}
+
+		if (this.team[0].t.stat.sPts === this.team[1].t.stat.sPts) {
+			this.playByPlay.logEvent({
+				type: "shootoutTie",
+			});
+
+			while (this.team[0].t.stat.sPts === this.team[1].t.stat.sPts) {
+				for (const t of reversedTeamNums) {
+					this.doShootoutShot(t, hitters[t], pitchers[t]);
+				}
+			}
+		}
+	}
+
 	shouldIntentionalWalk() {
 		// At end of game, don't put tying/winning run on
 		const diffPts = this.team[this.d].t.stat.pts - this.team[this.o].t.stat.pts;
@@ -2246,7 +2386,6 @@ class GameSim {
 		const p = t.getBatter().p;
 		this.playByPlay.logEvent({
 			type: "plateAppearance",
-			t: this.o,
 			pid: p.id,
 		});
 
@@ -2300,6 +2439,13 @@ class GameSim {
 
 		this.recordStat(teamNum, on, "gp");
 		this.recordStat(teamNum, on, "gpF", 1, "fielding");
+
+		// Update players on base
+		for (const base of this.bases) {
+			if (base?.p === off.p) {
+				base.p = on;
+			}
+		}
 	}
 
 	checkReliefPitcher(betweenInnings: boolean) {
@@ -2311,8 +2457,14 @@ class GameSim {
 
 		const t = this.team[this.d];
 
-		const saveSituation = this.inning === this.numInnings && saveOutsNeeded < 9;
-		const candidate = t.getBestReliefPitcher(saveSituation);
+		// Try to put in the closer if this is a save situation, or a tie game in the 9th+ inning, or we are winning in extra innings
+		const closerSituation =
+			(this.inning === this.numInnings &&
+				(saveOutsNeeded < 9 ||
+					this.team[this.o].t.stat.pts === this.team[this.d].t.stat.pts)) ||
+			(this.inning > this.numInnings &&
+				getWinner([this.team[0].t.stat, this.team[1].t.stat]) !== this.d);
+		const candidate = t.getBestReliefPitcher(closerSituation);
 		if (!candidate) {
 			return;
 		}
@@ -2396,7 +2548,6 @@ class GameSim {
 
 			this.playByPlay.logEvent({
 				type: "reliefPitcher",
-				t: this.d,
 				pidOn: candidate.p.id,
 				pidOff: pitcher.id,
 			});
@@ -2448,7 +2599,6 @@ class GameSim {
 
 				this.playByPlay.logEvent({
 					type: "injury",
-					t: info.t,
 					pid: p.id,
 					replacementPid: replacementPlayer?.id,
 				});
@@ -2466,26 +2616,29 @@ class GameSim {
 		if (
 			this.o === 0 &&
 			this.inning >= this.numInnings &&
-			this.team[0].t.stat.pts > this.team[1].t.stat.pts
+			getWinner([this.team[0].t.stat, this.team[1].t.stat]) === 0
 		) {
 			// Game over, home team is at bat and up after 9+ innings
 			return true;
 		}
 	}
 
-	simGame() {
+	simSide() {
 		this.playByPlay.logEvent({
 			type: "sideStart",
 			inning: this.inning,
 			t: this.o,
 			pitcherPid: this.team[this.d].playersInGameByPos.P.p.id,
 		});
+		if (this.inning > 1) {
+			this.checkReliefPitcher(true);
+		}
 
 		while (true) {
 			this.simPlateAppearance();
 
 			if (this.gameIsOverDuringInning()) {
-				break;
+				return true;
 			}
 
 			if (this.outs >= NUM_OUTS_PER_INNING) {
@@ -2496,10 +2649,10 @@ class GameSim {
 				if (this.o === 1) {
 					if (
 						this.inning >= this.numInnings &&
-						this.team[0].t.stat.pts > this.team[1].t.stat.pts
+						getWinner([this.team[0].t.stat, this.team[1].t.stat]) === 0
 					) {
 						// No need to play bottom of inning, home team is already up
-						break;
+						return true;
 					}
 				} else {
 					if (
@@ -2507,27 +2660,27 @@ class GameSim {
 						this.team[0].t.stat.pts !== this.team[1].t.stat.pts
 					) {
 						// Game over, all innings used up
-						break;
+						return true;
 					}
 				}
 
 				if (this.o === 0) {
-					this.inning += 1;
-					if (this.inning > this.numInnings) {
-						this.overtime = true;
-						this.overtimes += 1;
+					if (this.inning >= this.numInnings) {
+						if (this.overtimes >= this.maxOvertimes) {
+							// Tie
+							return true;
+						} else {
+							this.overtime = true;
+							this.overtimes += 1;
+						}
 					}
+
+					this.inning += 1;
 				}
 
 				this.possessionChange();
 				this.resetNewInning();
-				this.checkReliefPitcher(true);
-				this.playByPlay.logEvent({
-					type: "sideStart",
-					inning: this.inning,
-					t: this.o,
-					pitcherPid: this.team[this.d].playersInGameByPos.P.p.id,
-				});
+				return false;
 			} else {
 				this.checkReliefPitcher(false);
 			}
@@ -2586,8 +2739,8 @@ class GameSim {
 				}
 			}
 
-			if (p !== undefined) {
-				this.playByPlay.logStat(t, p.id, s, amt);
+			if (p !== undefined || s === "sAtt" || s === "sPts") {
+				this.playByPlay.logStat(t, p?.id, s, amt);
 			}
 		}
 	}

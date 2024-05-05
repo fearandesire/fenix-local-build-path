@@ -6,9 +6,12 @@ import AllStarDunk from "./AllStarDunk";
 import AllStarHistory from "./AllStarHistory";
 import AllStarTeams from "./AllStarTeams";
 import AllStarThree from "./AllStarThree";
+import AutoExpand from "./AutoExpand";
+import AutoRelocate from "./AutoRelocate";
 import AwardRaces from "./AwardRaces";
 import AwardsRecords from "./AwardsRecords";
 import Colleges from "./Colleges";
+import ComparePlayers from "./ComparePlayers";
 import Countries from "./Countries";
 import CustomizePlayer from "./CustomizePlayer";
 import DailySchedule from "./DailySchedule";
@@ -86,6 +89,7 @@ import Relatives from "./Relatives";
 import ResetPassword from "./ResetPassword";
 import Roster from "./Roster";
 import RosterContinuity from "./RosterContinuity";
+import SavedTrades from "./SavedTrades";
 import Schedule from "./Schedule";
 import ScheduledEvents from "./ScheduledEvents";
 import SeasonPreview from "./SeasonPreview";
@@ -114,9 +118,12 @@ export default {
 	AllStarHistory,
 	AllStarTeams,
 	AllStarThree,
+	AutoExpand,
+	AutoRelocate,
 	AwardRaces,
 	AwardsRecords,
 	Colleges,
+	ComparePlayers,
 	Countries,
 	CustomizePlayer,
 	DailySchedule,
@@ -193,6 +200,7 @@ export default {
 	ResetPassword,
 	Roster,
 	RosterContinuity,
+	SavedTrades,
 	Schedule,
 	ScheduledEvents,
 	SeasonPreview,

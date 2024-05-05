@@ -250,6 +250,9 @@ export const dropboxStream = async ({
 					// Other situations could lead to a 409, such as if the user has not verified their email address https://discord.com/channels/@me/913081687586537503/916208729546977310 - for now, don't worry about that, just leave fileURL blank and show a generic message about it.
 				}
 
+				// /scl/fi/ URLs now work with dl!
+				// https://www.dropboxforum.com/t5/Create-upload-and-share/Shared-Link-quot-scl-quot-to-quot-s-quot/td-p/689070/page/9
+				// See also error message in ExportLeague when it finds a URL containing /scl/fi/
 				const downloadURL = fileURL?.replace("https://www.", "https://dl.");
 				onComplete(downloadURL);
 			} catch (error) {

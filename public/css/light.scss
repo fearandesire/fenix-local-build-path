@@ -442,7 +442,7 @@ table {
 }
 
 .select-team {
-	width: 203px;
+	max-width: 203px;
 }
 
 .player-picture {
@@ -623,33 +623,6 @@ $jersey-number-width: 15px;
 	p:last-child {
 		margin-bottom: 0;
 	}
-}
-
-.finances-settings-label {
-	line-height: 32px;
-	padding-right: 1em;
-	text-align: right;
-	width: 85px;
-	white-space: nowrap;
-	overflow: hidden;
-}
-
-.finances-settings-text {
-	line-height: 30px;
-	padding-left: 1em;
-}
-
-.finances-settings-text-small {
-	font-size: 12px;
-	line-height: 15px;
-	padding-left: 1em;
-}
-
-.finances-settings-field {
-	width: 115px;
-}
-.finances-settings button {
-	display: none;
 }
 
 .badge-injury {
@@ -1044,8 +1017,12 @@ tr.table-warning:hover > td {
 	text-decoration-style: dashed;
 	background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22200%22%20height%3D%22100%22%3E%3Cpath%20fill%3D%22%23000%22%20d%3D%22M%200%2C0%20L%20100%2C100%20L%20200%2C0%20z%22%2F%3E%3C%2Fsvg%3E");
 	background-repeat: no-repeat, repeat;
-	background-position: right 0 top 45%, 0 0;
-	background-size: 0.62em auto, 100%;
+	background-position:
+		right 0 top 45%,
+		0 0;
+	background-size:
+		0.62em auto,
+		100%;
 	font-size: 13px;
 
 	option {
@@ -1208,8 +1185,13 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 	color: $black !important;
 }
 
-.sort-inside-modal {
-	z-index: 999999999;
+.bg-tertiary {
+	background-color: $gray-300 !important;
+}
+
+.touch-action-none {
+	// This is needed for draggable handles on mobile https://docs.dndkit.com/api-documentation/sensors/pointer#touch-action
+	touch-action: none;
 }
 
 button.fast-forward {
@@ -1476,20 +1458,6 @@ hr {
 	opacity: 0.1;
 }
 
-// Based on input-group-sm from _input-group.scss
-.input-group-xs > .form-control,
-.input-group-xs > .form-select,
-.input-group-xs > .input-group-text,
-.input-group-xs > .btn {
-	padding: $input-padding-y-sm $input-padding-x-sm;
-	@include font-size($input-font-size-sm);
-	@include border-radius($input-border-radius-sm);
-	height: 27px;
-}
-.input-group-xs > .form-select {
-	padding-right: $form-select-padding-x + $form-select-indicator-padding;
-}
-
 // Add !important to bg color so they can be used in table on achievements page
 @each $state, $value in $theme-colors {
 	$list-group-variant-bg: shift-color($value, $list-group-item-bg-scale);
@@ -1690,4 +1658,24 @@ table.sticky-xxx {
 
 .row-gap-3 {
 	row-gap: 1rem !important;
+}
+
+tr.text-body-secondary td {
+	// Without these, then applying this to a table row (like for TOT stat rows) does not override the color from the striped table class
+	color: var(--bs-secondary-color) !important;
+}
+
+.compare-players-heading {
+	font-size: 0.75rem;
+	text-transform: uppercase;
+	padding: 4px;
+	cursor: pointer;
+
+	display: block;
+	font-weight: 500;
+	color: $black;
+
+	&:hover {
+		text-decoration: none;
+	}
 }

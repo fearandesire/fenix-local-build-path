@@ -1,7 +1,6 @@
-import orderBy from "lodash-es/orderBy";
 import { draft, player, freeAgents } from "../..";
 import { PHASE, POSITION_COUNTS } from "../../../../common";
-import { groupBy } from "../../../../common/groupBy";
+import { groupBy, orderBy } from "../../../../common/utils";
 import type {
 	PlayerWithoutKey,
 	MinimalPlayerRatings,
@@ -12,26 +11,33 @@ import { g, random } from "../../../util";
 
 const createRandomPlayers = async ({
 	activeTids,
-	scoutingRank,
+	scoutingLevel,
 	teams,
 }: {
 	activeTids: number[];
-	scoutingRank: number;
+	scoutingLevel: number;
 	teams: Pick<Team, "tid" | "retiredJerseyNumbers">[];
 }) => {
 	const players: PlayerWithoutKey[] = [];
 
-	// Generate past 20 years of draft classes, unless forceRetireAge/draftAges make that infeasible
+	// Generate past 20 years of draft classes, unless forceRetireSeasons/forceRetireAge/draftAges make that infeasible
 	let seasonsSimmed = 20;
 	const forceRetireAge = g.get("forceRetireAge");
 	const draftAges = g.get("draftAges");
+	const forceRetireSeasons = g.get("forceRetireSeasons");
 	const averageDraftAge = Math.round((draftAges[0] + draftAges[1]) / 2);
 	const forceRetireAgeDiff = forceRetireAge - averageDraftAge;
-	if (forceRetireAgeDiff > 0 && forceRetireAgeDiff < seasonsSimmed) {
-		seasonsSimmed = forceRetireAgeDiff;
+	let forceRetireDiff;
+	if (forceRetireSeasons > 0 && forceRetireAgeDiff > 0) {
+		forceRetireDiff = Math.min(forceRetireSeasons, forceRetireAgeDiff);
+	} else {
+		forceRetireDiff = Math.max(forceRetireSeasons, forceRetireAgeDiff);
+	}
+	if (forceRetireDiff > 0 && forceRetireDiff < seasonsSimmed) {
+		seasonsSimmed = forceRetireDiff;
 	} else {
 		// Maybe add some extra seasons, for leagues when players start young
-		const estimatedRetireAge = forceRetireAgeDiff > 0 ? forceRetireAge : 35;
+		const estimatedRetireAge = forceRetireDiff > 0 ? forceRetireAge : 35;
 		const estimatedRetireAgeDiff = estimatedRetireAge - averageDraftAge;
 		if (estimatedRetireAgeDiff > seasonsSimmed) {
 			seasonsSimmed = estimatedRetireAgeDiff;
@@ -52,7 +58,7 @@ const createRandomPlayers = async ({
 	) {
 		let draftClass = await draft.genPlayersWithoutSaving(
 			g.get("season"),
-			scoutingRank,
+			scoutingLevel,
 			[],
 		);
 
@@ -103,7 +109,7 @@ const createRandomPlayers = async ({
 			};
 
 			if (round === 0) {
-				// Guarantee contracts for undrafted players are overwritten below
+				// Guaranteed contracts for undrafted players are overwritten below
 				p.contract.exp = -Infinity;
 			} else {
 				let years;

@@ -1981,12 +1981,6 @@ const sportSpecificCols = bySport<{
 			sortType: "number",
 			title: "Y/A",
 		},
-		"stat:recYdsPerAtt": {
-			desc: "Yards Per Catch",
-			sortSequence: ["desc", "asc"],
-			sortType: "number",
-			title: "Y/A",
-		},
 		"stat:fg": {
 			desc: "Field Goals Made",
 			sortSequence: ["desc", "asc"],
@@ -2447,6 +2441,12 @@ const sportSpecificCols = bySport<{
 			sortType: "number",
 			title: "+/-",
 		},
+		"stat:shft": {
+			desc: "Shifts",
+			sortSequence: ["desc", "asc"],
+			sortType: "number",
+			title: "SHFT",
+		},
 		"stat:pim": {
 			desc: "Penalty Minutes",
 			sortSequence: ["desc", "asc"],
@@ -2845,7 +2845,15 @@ const cols: {
 		sortSequence: ["desc", "asc"],
 		sortType: "number",
 	},
+	Coaching: {
+		desc: "Coaching Level",
+		sortSequence: ["desc", "asc"],
+		sortType: "number",
+	},
 	College: {},
+	Compare: {
+		sortSequence: [],
+	},
 	Conference: {},
 	Contract: {
 		sortSequence: ["desc", "asc"],
@@ -2921,6 +2929,11 @@ const cols: {
 	},
 	Experience: {
 		desc: "Number of Years in the League",
+		sortSequence: ["desc", "asc"],
+		sortType: "number",
+	},
+	Facilities: {
+		desc: "Facilities Level",
 		sortSequence: ["desc", "asc"],
 		sortType: "number",
 	},
@@ -3019,6 +3032,11 @@ const cols: {
 	},
 	Hard: {
 		desc: "Hard Difficulty",
+		sortSequence: ["desc", "asc"],
+		sortType: "number",
+	},
+	Health: {
+		desc: "Health Level",
 		sortSequence: ["desc", "asc"],
 		sortType: "number",
 	},
@@ -3175,6 +3193,11 @@ const cols: {
 		sortSequence: ["desc", "asc"],
 		sortType: "currency",
 	},
+	Scouting: {
+		desc: "Scouting Level",
+		sortSequence: ["desc", "asc"],
+		sortType: "number",
+	},
 	Season: {
 		sortSequence: ["desc", "asc"],
 		sortType: "number",
@@ -3199,7 +3222,6 @@ const cols: {
 		sortType: "currency",
 	},
 	Trade: {
-		desc: "Ties",
 		noSearch: true,
 	},
 	OTL: {

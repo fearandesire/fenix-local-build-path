@@ -4,7 +4,7 @@ import achievement from "./achievement";
 import local from "./local";
 import toUI from "./toUI";
 import type { Conditions, PartialTopMenu } from "../../common/types";
-import { groupBy } from "../../common/groupBy";
+import { groupBy } from "../../common/utils";
 
 // If it tries to add achievements from IDB to API twice at the same time, weird stuff could happen
 let adding = false;
@@ -74,6 +74,7 @@ const checkAccount = async (
 	} catch (err) {
 		// Don't freak out if an AJAX request fails or whatever
 		console.log(err);
+		adding = false;
 		return {
 			email: "",
 			goldCancelled: false,

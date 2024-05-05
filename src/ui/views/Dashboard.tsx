@@ -14,10 +14,7 @@ import { DataTable, TeamLogoInline } from "../components";
 import useTitleBar from "../hooks/useTitleBar";
 import { confirm, getCols, logEvent, toWorker } from "../util";
 import type { View } from "../../common/types";
-
-// Would be better to use random.choice, but it is in worker only
-const choice = <T extends unknown>(array: T[]): T =>
-	array[Math.floor(Math.random() * array.length)];
+import { choice } from "../../common/random";
 
 // Re-rendering caused this to run multiple times after "Play" click, even with useRef or useMemo
 const randomOtherSport = bySport({
@@ -434,30 +431,41 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 						</a>
 						<div className="d-sm-none" />
 						{SPORT_HAS_LEGENDS ? (
-							<a
-								href="/new_league/legends"
-								className="btn btn-primary dashboard-top-link dashboard-top-link-new me-3 mb-3"
-							>
-								New league
-								<br />
-								<span className="dashboard-top-link-small">» Legends</span>
-							</a>
+							<>
+								<a
+									href="/new_league/cross_era"
+									className="btn btn-primary dashboard-top-link dashboard-top-link-new me-3 mb-3"
+								>
+									New league
+									<br />
+									<span className="dashboard-top-link-small">» Cross-era</span>
+								</a>
+								<a
+									href="/new_league/legends"
+									className="btn btn-primary dashboard-top-link dashboard-top-link-new me-sm-3 mb-3"
+								>
+									New league
+									<br />
+									<span className="dashboard-top-link-small">» Legends</span>
+								</a>
+								<div className="d-sm-none" />
+							</>
 						) : null}
 						<a
 							href="/new_league"
-							className="btn btn-primary dashboard-top-link dashboard-top-link-new me-sm-3 mb-3"
+							className="btn btn-primary dashboard-top-link dashboard-top-link-new me-3 mb-3"
 						>
 							New league
 							<br />
 							<span className="dashboard-top-link-small">» Custom</span>
 						</a>
-						<div className="d-sm-none" />
 						<a
 							href="/exhibition"
-							className="btn btn-secondary dashboard-top-link dashboard-top-link-new me-3 mb-3"
+							className="btn btn-secondary dashboard-top-link dashboard-top-link-new me-sm-3 mb-3"
 						>
 							Exhibition game
 						</a>
+						<div className="d-sm-none" />
 					</>
 				) : (
 					<>
@@ -480,9 +488,7 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 				)}
 				<a
 					href="https://zengm.com/"
-					className={`btn btn-light-bordered dashboard-top-link dashboard-top-link-other mb-3 dashboard-top-link-other-${randomOtherSport}${
-						SPORT_HAS_REAL_PLAYERS ? "" : " dashboard-top-link-flatten"
-					}`}
+					className={`btn btn-light-bordered dashboard-top-link dashboard-top-link-other mb-3 dashboard-top-link-other-${randomOtherSport} dashboard-top-link-flatten`}
 				>
 					Try our other sports sim
 					<br /> games!

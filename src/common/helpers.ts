@@ -7,9 +7,9 @@ import type {
 	RelativeType,
 } from "./types";
 import getTeamInfos from "./getTeamInfos";
-import orderBy from "lodash-es/orderBy";
 import isSport from "./isSport";
 import { PHASE } from "./constants";
+import { orderBy } from "./utils";
 
 const getPopRanks = (
 	teamSeasons: {
@@ -499,123 +499,123 @@ function getTeamsDefault(): TeamBasic[] {
 			},
 			{
 				tid: 4,
-				cid: 0,
-				did: 1,
-				abbrev: "CHA",
-			},
-			{
-				tid: 5,
 				cid: 1,
 				did: 2,
 				abbrev: "CHI",
 			},
 			{
-				tid: 6,
+				tid: 5,
 				cid: 0,
 				did: 1,
-				abbrev: "CIN",
+				abbrev: "CLB",
 			},
 			{
-				tid: 7,
+				tid: 6,
 				cid: 1,
 				did: 2,
 				abbrev: "DAL",
 			},
 			{
-				tid: 8,
+				tid: 7,
 				cid: 1,
 				did: 2,
 				abbrev: "DEN",
 			},
 			{
-				tid: 9,
+				tid: 8,
 				cid: 0,
 				did: 0,
 				abbrev: "DET",
 			},
 			{
-				tid: 10,
+				tid: 9,
 				cid: 1,
 				did: 3,
 				abbrev: "EDM",
 			},
 			{
-				tid: 11,
+				tid: 10,
 				cid: 1,
 				did: 3,
 				abbrev: "LAL",
 			},
 			{
-				tid: 12,
+				tid: 11,
 				cid: 1,
 				did: 3,
 				abbrev: "LAE",
 			},
 			{
-				tid: 13,
+				tid: 12,
 				cid: 1,
 				did: 3,
 				abbrev: "LV",
 			},
 			{
-				tid: 14,
+				tid: 13,
 				cid: 1,
 				did: 2,
 				abbrev: "MEM",
 			},
 			{
-				tid: 15,
+				tid: 14,
 				cid: 0,
 				did: 0,
 				abbrev: "MIA",
 			},
 			{
-				tid: 16,
+				tid: 15,
 				cid: 1,
 				did: 2,
 				abbrev: "MIN",
 			},
 			{
-				tid: 17,
+				tid: 16,
 				cid: 0,
 				did: 0,
 				abbrev: "MON",
 			},
 			{
-				tid: 18,
+				tid: 17,
 				cid: 0,
 				did: 1,
 				abbrev: "NJ",
 			},
 			{
-				tid: 19,
+				tid: 18,
 				cid: 0,
 				did: 1,
 				abbrev: "NYC",
 			},
 			{
-				tid: 20,
+				tid: 19,
 				cid: 0,
 				did: 0,
 				abbrev: "OTT",
 			},
 			{
-				tid: 21,
+				tid: 20,
 				cid: 0,
 				did: 1,
 				abbrev: "PHI",
 			},
 			{
-				tid: 22,
+				tid: 21,
 				cid: 1,
 				did: 2,
 				abbrev: "PHO",
 			},
 			{
-				tid: 23,
+				tid: 22,
 				cid: 0,
 				did: 1,
 				abbrev: "PIT",
+			},
+			{
+				tid: 23,
+				cid: 0,
+				did: 1,
+				abbrev: "RAL",
 			},
 			{
 				tid: 24,
@@ -930,9 +930,11 @@ const leagueUrlFactory = (
  */
 const formatCurrency = (
 	amount: number,
-	append: string = "",
+	initialUnits: "M" | "" = "",
 	precision: number = 2,
 ) => {
+	const baseExponent = initialUnits === "M" ? 6 : 0; // Input unit is in millions
+
 	const sign = amount < 0 ? "-" : "";
 	let abs = Math.abs(amount);
 
@@ -940,26 +942,29 @@ const formatCurrency = (
 		return "$0";
 	}
 
+	let append = "";
+
 	// Keep in sync with getSortVal
-	if (append === "M" && abs > 1000) {
-		abs /= 1000;
-		append = "B";
+	if (abs >= 1000) {
+		const currencySuffixes = ["", "k", "M", "B", "T", "Q"];
 
-		if (abs > 1000) {
-			abs /= 1000;
-			append = "T";
-
-			if (abs > 1000) {
-				abs /= 1000;
-				append = "Q";
-			}
+		const exponent = Math.floor(Math.log10(abs));
+		const suffixIndex = Math.floor((exponent + baseExponent) / 3);
+		if (suffixIndex < currencySuffixes.length) {
+			append = currencySuffixes[suffixIndex];
+			abs /= 1000 ** (suffixIndex - baseExponent / 3);
+		} else {
+			// Scientific notation
+			append = `e${exponent + baseExponent}`;
+			abs /= 10 ** exponent;
 		}
-	}
-
-	if (append === "M" && abs < 1 && abs !== 0) {
+	} else if (abs < 1 && initialUnits === "M") {
 		abs *= 1000;
 		append = "k";
 		precision = 0;
+	} else {
+		// No scaling needed!
+		append = initialUnits;
 	}
 
 	let numberString = abs.toFixed(precision);
@@ -1022,9 +1027,16 @@ function ordinal(x?: number | null): string {
 	return x.toString() + suffix;
 }
 
+// On iOS in some locales, the inputMode="decimal" keyboard contians a , as the decimal separator rather than .
+const localeParseFloat = (string: string) => {
+	return parseFloat(
+		typeof string === "string" ? string.replaceAll(",", ".") : string,
+	);
+};
+
 // Format a number as an integer with commas in the thousands places.
 const numberWithCommas = (x: number | string): string => {
-	const y = typeof x === "string" ? parseFloat(x) : x;
+	const y = typeof x === "string" ? localeParseFloat(x) : x;
 
 	return y.toLocaleString("en-US", { maximumFractionDigits: 10 });
 };
@@ -1268,36 +1280,38 @@ const getJerseyNumber = (
 const roundsWonText = (
 	playoffRoundsWon: number,
 	numPlayoffRounds: number,
-	numConfs: number,
+	playoffsByConf: boolean,
 	showMissedPlayoffs?: boolean,
-): string => {
-	const playoffsByConf = numConfs === 2;
-
+) => {
 	if (playoffRoundsWon === numPlayoffRounds) {
-		return "League champs";
+		return "League champs" as const;
 	}
 
 	if (playoffRoundsWon === numPlayoffRounds - 1) {
-		return playoffsByConf ? "Conference champs" : "Made finals";
+		return playoffsByConf ? "Conference champs" : ("Made finals" as const);
 	}
 
 	if (playoffRoundsWon === 0) {
-		return "Made playoffs";
+		return "Made playoffs" as const;
 	}
 
 	if (playoffRoundsWon === numPlayoffRounds - 2) {
-		return playoffsByConf ? "Made conference finals" : "Made semifinals";
+		return playoffsByConf
+			? "Made conference finals"
+			: ("Made semifinals" as const);
 	}
 
 	if (playoffRoundsWon === numPlayoffRounds - 3) {
-		return playoffsByConf ? "Made conference semifinals" : "Made quarterfinals";
+		return playoffsByConf
+			? "Made conference semifinals"
+			: ("Made quarterfinals" as const);
 	}
 
 	if (playoffRoundsWon >= 1) {
-		return `Made ${ordinal(playoffRoundsWon + 1)} round`;
+		return `Made ${ordinal(playoffRoundsWon + 1)} round` as const;
 	}
 
-	return showMissedPlayoffs ? "Missed playoffs" : "";
+	return showMissedPlayoffs ? "Missed playoffs" : ("" as const);
 };
 
 // Based on the currnet number of active teams, the number of draft rounds, and the number of expansion teams, what is the minimum valid number for the max number of players that can be taken per team?
@@ -1400,20 +1414,24 @@ const getRelativeType = (
 	gender: GameAttributesLeague["gender"],
 	type: RelativeType | "grandfather" | "uncle" | "grandson" | "nephew",
 ) => {
-	if (type === "brother") {
-		return gender === "male" ? "Brother" : "Sister";
-	} else if (type === "son") {
-		return gender === "male" ? "Son" : "Daughter";
-	} else if (type === "father") {
-		return gender === "male" ? "Father" : "Mother";
-	} else if (type === "grandfather") {
-		return gender === "male" ? "Grandfather" : "Grandmother";
-	} else if (type === "grandson") {
-		return gender === "male" ? "Grandson" : "Granddaughter";
-	} else if (type === "nephew") {
-		return gender === "male" ? "Nephew" : "Niece";
-	} else {
-		return gender === "male" ? "Uncle" : "Aunt";
+	const isMale = gender === "male";
+
+	switch (type) {
+		case "brother":
+			return isMale ? "Brother" : "Sister";
+		case "son":
+			return isMale ? "Son" : "Daughter";
+		case "father":
+			return isMale ? "Father" : "Mother";
+		case "grandfather":
+			return isMale ? "Grandfather" : "Grandmother";
+		case "grandson":
+			return isMale ? "Grandson" : "Granddaughter";
+		case "nephew":
+			return isMale ? "Nephew" : "Niece";
+		case "uncle":
+		default:
+			return isMale ? "Uncle" : "Aunt";
 	}
 };
 
@@ -1475,6 +1493,14 @@ const getRecordNumericValue = (record: string | null) => {
 	return 0;
 };
 
+const plural = (text: string, amount: number, textPluralOverride?: string) => {
+	if (amount === 1) {
+		return text;
+	}
+
+	return textPluralOverride ?? `${text}s`;
+};
+
 export default {
 	addPopRank,
 	getPopRanks,
@@ -1490,6 +1516,7 @@ export default {
 	leagueUrlFactory,
 	numberWithCommas,
 	ordinal,
+	plural,
 	roundWinp,
 	upperCaseFirstLetter,
 	keys,
@@ -1503,4 +1530,5 @@ export default {
 	getRelativeType,
 	pronoun,
 	getRecordNumericValue,
+	localeParseFloat,
 };

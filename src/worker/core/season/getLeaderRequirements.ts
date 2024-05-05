@@ -4,7 +4,10 @@ import { defaultGameAttributes, g, helpers } from "../../util";
 
 // This is for league leaders pages and player profile page stat tables
 // https://www.basketball-reference.com/about/rate_stat_req.html has some info for basketball, can use as rough guide
+// sortAscending can't use lowerIsBetter because some of these (like "tov") are considered "bad" if you lead it
 const getLeaderRequirements = () => {
+	const numGames = defaultGameAttributes.numGames[0].value;
+
 	const basketballPerGameStats = {
 		minStats: { gp: 58 },
 	};
@@ -28,17 +31,17 @@ const getLeaderRequirements = () => {
 		minStats: { fg: basketballMinFg },
 	};
 	const basketballFt = {
-		minStats: { ft: 125 },
+		minStats: { ft: 125 * g.get("ftAccuracyFactor") },
 	};
 
 	const footballPssStats = {
-		minStats: { pss: 14 * defaultGameAttributes.numGames },
+		minStats: { pss: 14 * numGames },
 	};
 	const footballRusStats = {
-		minStats: { rus: 6.25 * defaultGameAttributes.numGames },
+		minStats: { rus: 6.25 * numGames },
 	};
 	const footballRecStats = {
-		minStats: { rec: 1.875 * defaultGameAttributes.numGames },
+		minStats: { rec: 1.875 * numGames },
 	};
 
 	return bySport<
@@ -56,72 +59,72 @@ const getLeaderRequirements = () => {
 	>({
 		baseball: {
 			ba: {
-				minStats: { pa: defaultGameAttributes.numGames * 3.1 },
+				minStats: { pa: numGames * 3.1 },
 			},
 			obp: {
-				minStats: { pa: defaultGameAttributes.numGames * 3.1 },
+				minStats: { pa: numGames * 3.1 },
 			},
 			slg: {
-				minStats: { pa: defaultGameAttributes.numGames * 3.1 },
+				minStats: { pa: numGames * 3.1 },
 			},
 			ops: {
-				minStats: { pa: defaultGameAttributes.numGames * 3.1 },
+				minStats: { pa: numGames * 3.1 },
 			},
 			era: {
 				minStats: {
-					outs: defaultGameAttributes.numGames * NUM_OUTS_PER_INNING,
+					outs: numGames * NUM_OUTS_PER_INNING,
 				},
 				sortAscending: true,
 			},
 			fip: {
 				minStats: {
-					outs: defaultGameAttributes.numGames * NUM_OUTS_PER_INNING,
+					outs: numGames * NUM_OUTS_PER_INNING,
 				},
 				sortAscending: true,
 			},
 			whip: {
 				minStats: {
-					outs: defaultGameAttributes.numGames * NUM_OUTS_PER_INNING,
+					outs: numGames * NUM_OUTS_PER_INNING,
 				},
 				sortAscending: true,
 			},
 			h9: {
 				minStats: {
-					outs: defaultGameAttributes.numGames * NUM_OUTS_PER_INNING,
+					outs: numGames * NUM_OUTS_PER_INNING,
 				},
 				sortAscending: true,
 			},
 			hr9: {
 				minStats: {
-					outs: defaultGameAttributes.numGames * NUM_OUTS_PER_INNING,
+					outs: numGames * NUM_OUTS_PER_INNING,
 				},
 				sortAscending: true,
 			},
 			bb9: {
 				minStats: {
-					outs: defaultGameAttributes.numGames * NUM_OUTS_PER_INNING,
+					outs: numGames * NUM_OUTS_PER_INNING,
 				},
 				sortAscending: true,
 			},
 			so9: {
 				minStats: {
-					outs: defaultGameAttributes.numGames * NUM_OUTS_PER_INNING,
+					outs: numGames * NUM_OUTS_PER_INNING,
 				},
 			},
 			pc9: {
 				minStats: {
-					outs: defaultGameAttributes.numGames * NUM_OUTS_PER_INNING,
+					outs: numGames * NUM_OUTS_PER_INNING,
 				},
 				sortAscending: true,
 			},
 			sow: {
 				minStats: {
-					outs: defaultGameAttributes.numGames * NUM_OUTS_PER_INNING,
+					outs: numGames * NUM_OUTS_PER_INNING,
 				},
 			},
 			babip: {
 				minStats: {
-					outs: defaultGameAttributes.numGames * NUM_OUTS_PER_INNING,
+					outs: numGames * NUM_OUTS_PER_INNING,
 				},
 			},
 			gp: {},
@@ -348,7 +351,6 @@ const getLeaderRequirements = () => {
 			cmpPct: footballPssStats,
 			qbRat: footballPssStats,
 			rusYdsPerAtt: footballRusStats,
-			recYdsPerAtt: footballRecStats,
 			pssTDPct: footballPssStats,
 			pssIntPct: {
 				...footballPssStats,
@@ -372,27 +374,27 @@ const getLeaderRequirements = () => {
 			ydsPerTouch: footballRecStats,
 			fgPct: {
 				minStats: {
-					fga: defaultGameAttributes.numGames,
+					fga: numGames,
 				},
 			},
 			xpPct: {
 				minStats: {
-					xpa: defaultGameAttributes.numGames,
+					xpa: numGames,
 				},
 			},
 			pntYdsPerAtt: {
 				minStats: {
-					pnt: 2.5 * defaultGameAttributes.numGames,
+					pnt: 2.5 * numGames,
 				},
 			},
 			prYdsPerAtt: {
 				minStats: {
-					pr: 1.25 * defaultGameAttributes.numGames,
+					pr: 1.25 * numGames,
 				},
 			},
 			krYdsPerAtt: {
 				minStats: {
-					kr: 1.25 * defaultGameAttributes.numGames,
+					kr: 1.25 * numGames,
 				},
 			},
 			gp: {},
@@ -475,6 +477,7 @@ const getLeaderRequirements = () => {
 			pm: {
 				filter: p => p.ratings.pos !== "G",
 			},
+			shft: {},
 			min: {
 				filter: p => p.ratings.pos !== "G",
 			},
@@ -532,6 +535,7 @@ const getLeaderRequirements = () => {
 			shAMax: {},
 			sMax: {},
 			tsaMax: {},
+			shftMax: {},
 			minMax: {},
 			ppMinMax: {},
 			shMinMax: {},
@@ -547,10 +551,10 @@ const getLeaderRequirements = () => {
 				sortValue: helpers.getRecordNumericValue,
 			},
 			sPct: {
-				minStats: { s: defaultGameAttributes.numGames },
+				minStats: { s: numGames },
 			},
 			foPct: {
-				minStats: { fow: 2 * defaultGameAttributes.numGames },
+				minStats: { fow: 2 * numGames },
 			},
 		},
 	});

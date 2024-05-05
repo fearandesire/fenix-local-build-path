@@ -330,6 +330,13 @@ const processRatings = (
 						tidTemp = ps.tid;
 					}
 				}
+				if (
+					pr.season === g.get("season") &&
+					tidTemp === undefined &&
+					p.tid >= 0
+				) {
+					tidTemp = p.tid;
+				}
 
 				if (attr === "abbrev") {
 					if (tidTemp !== undefined) {
@@ -411,7 +418,8 @@ export const weightByMinutes = bySport({
 const reduceCareerStats = (
 	careerStats: any[],
 	attr: string,
-	playoffs: boolean,
+	seasonType: "playoffs" | "regularSeason" | "combined",
+	mergeStats: PlayersPlusOptionsRequired["mergeStats"],
 ) => {
 	let initialValue: null | (number | undefined)[] | number;
 	let type: "max" | "byPos" | "normal";
@@ -432,7 +440,16 @@ const reduceCareerStats = (
 	const weightAttrByMinutes = weightByMinutes.includes(attr);
 
 	return careerStats
-		.filter(cs => cs.playoffs === playoffs && cs.tid !== PLAYER.TOT)
+		.filter(
+			cs =>
+				((cs.playoffs === "combined" && seasonType === "combined") ||
+					(cs.playoffs === true && seasonType === "playoffs") ||
+					(cs.playoffs === false && seasonType === "regularSeason")) &&
+				// Combined only has TOT, even for totAndTeams, so keep TOT combined rows
+				(mergeStats !== "totAndTeams" ||
+					cs.playoffs === "combined" ||
+					cs.tid !== PLAYER.TOT),
+		)
 		.reduce((memo, cs) => {
 			if (cs[attr] === undefined) {
 				return memo;
@@ -478,6 +495,7 @@ const getPlayerStats = (
 	tid: number | undefined,
 	playoffs: boolean,
 	regularSeason: boolean,
+	combined: boolean,
 	mergeStats: PlayersPlusOptionsRequired["mergeStats"],
 ) => {
 	const rows = helpers.deepCopy(
@@ -490,22 +508,25 @@ const getPlayerStats = (
 			const seasonCheck = season === undefined || ps.season === season;
 			const tidCheck = tid === undefined || ps.tid === tid;
 			const playoffsCheck =
-				(playoffs && ps.playoffs) || (regularSeason && !ps.playoffs);
+				(playoffs && ps.playoffs) ||
+				(regularSeason && !ps.playoffs) ||
+				combined;
 			return seasonCheck && tidCheck && playoffsCheck;
 		}),
 	);
 
 	// Can't merge if there's only 1 row!
-	if (mergeStats === "none" || rows.length <= 1) {
+	if ((mergeStats === "none" || rows.length <= 1) && !combined) {
 		return rows;
 	}
 
 	let thereAreRowsToMerge = false;
 	const seasonInfoKey = (row: { season: number; playoffs: true }) =>
 		JSON.stringify([row.season, row.playoffs]);
+	const seasonInfoCombinedKey = (row: { season: number }) => String(row.season);
 	type SeasonInfo = {
 		season: number;
-		playoffs: boolean;
+		seasonType: "regularSeason" | "playoffs" | "combined";
 		rows: any[];
 	};
 	const seasonInfos: SeasonInfo[] = [];
@@ -516,23 +537,51 @@ const getPlayerStats = (
 			continue;
 		}
 
-		const key = seasonInfoKey(row);
-		if (seasonInfosByKey[key]) {
-			seasonInfosByKey[key].rows.push(row);
+		if (regularSeason || playoffs) {
+			const key = seasonInfoKey(row);
+			if (seasonInfosByKey[key]) {
+				seasonInfosByKey[key].rows.push(row);
+				thereAreRowsToMerge = true;
+			} else {
+				const seasonInfo: SeasonInfo = {
+					season: row.season,
+					seasonType: row.playoffs ? "playoffs" : "regularSeason",
+					rows: [row],
+				};
+				seasonInfos.push(seasonInfo);
+				seasonInfosByKey[key] = seasonInfo;
+			}
+		}
+
+		if (combined) {
+			// Need to always activate this, so we go through the code path that returns from seasonInfo (with playoffs="combined") rather than raw rows
 			thereAreRowsToMerge = true;
-		} else {
-			const seasonInfo = {
-				season: row.season,
-				playoffs: row.playoffs,
-				rows: [row],
+
+			const combinedRow = {
+				...row,
+				playoffs: "combined",
 			};
-			seasonInfos.push(seasonInfo);
-			seasonInfosByKey[key] = seasonInfo;
+
+			const keyCombined = seasonInfoCombinedKey(combinedRow);
+			if (seasonInfosByKey[keyCombined]) {
+				seasonInfosByKey[keyCombined].rows.push(combinedRow);
+			} else {
+				const seasonInfo: SeasonInfo = {
+					season: combinedRow.season,
+					seasonType: "combined",
+					rows: [combinedRow],
+				};
+				seasonInfos.push(seasonInfo);
+				seasonInfosByKey[keyCombined] = seasonInfo;
+			}
 		}
 	}
 
 	// Merged playoffs can only happen with God Mode forcing a player to switch teams during playoffs
-	const getMerged = (rowsToMerge: any[]) => {
+	const getMerged = (
+		rowsToMerge: any[],
+		seasonType: "regularSeason" | "playoffs" | "combined",
+	) => {
 		// Aggregate annual stats and ignore other things
 		const ignoredKeys = [
 			"season",
@@ -546,7 +595,12 @@ const getPlayerStats = (
 
 		for (const attr of attrs) {
 			if (!ignoredKeys.includes(attr)) {
-				statSums[attr] = reduceCareerStats(rowsToMerge, attr, false);
+				statSums[attr] = reduceCareerStats(
+					rowsToMerge,
+					attr,
+					seasonType,
+					mergeStats,
+				);
 			}
 		}
 
@@ -564,13 +618,31 @@ const getPlayerStats = (
 		// Defaults from latest entry
 		for (const attr of ignoredKeys) {
 			if (attr === "tid" && mergeStats === "totAndTeams") {
-				statSums[attr] = PLAYER.TOT;
+				// In combined mode, if all teams are the same (like same regular season and playoffs team), then keep the tid there
+				if (seasonType === "combined") {
+					let allSame = true;
+					const firstTid = rowsToMerge[0].tid;
+					for (const row of rowsToMerge) {
+						if (row.tid !== firstTid) {
+							allSame = false;
+							break;
+						}
+					}
+					if (allSame) {
+						statSums[attr] = firstTid;
+					} else {
+						statSums[attr] = PLAYER.TOT;
+					}
+				} else {
+					statSums[attr] = PLAYER.TOT;
+				}
 			} else {
 				statSums[attr] = rowsToMerge.at(-1)[attr];
 			}
 		}
 
-		if (mergeStats === "totAndTeams") {
+		// totAndTeams doesn't make sense for "combined" because the goal is to see the combined output
+		if (mergeStats === "totAndTeams" && seasonType !== "combined") {
 			// Return individual stats rows and the merged row
 			return [
 				...rowsToMerge.map(row => ({
@@ -589,7 +661,7 @@ const getPlayerStats = (
 		return seasonInfos
 			.map(seasonInfo =>
 				seasonInfo.rows.length > 1
-					? getMerged(seasonInfo.rows)
+					? getMerged(seasonInfo.rows, seasonInfo.seasonType)
 					: seasonInfo.rows,
 			)
 			.flat();
@@ -635,6 +707,7 @@ const processStats = (
 		mergeStats,
 		playoffs,
 		regularSeason,
+		combined,
 		season,
 		tid,
 		showNoStats,
@@ -650,6 +723,7 @@ const processStats = (
 		tid,
 		playoffs,
 		regularSeason,
+		combined,
 		mergeStats,
 	);
 
@@ -662,6 +736,7 @@ const processStats = (
 			tid,
 			playoffs,
 			regularSeason,
+			combined,
 			mergeStats,
 		);
 	}
@@ -688,7 +763,9 @@ const processStats = (
 
 	if (
 		season !== undefined &&
-		((playoffs && !regularSeason) || (!playoffs && regularSeason))
+		((playoffs && !regularSeason && !combined) ||
+			(!playoffs && regularSeason && !combined) ||
+			(!playoffs && !regularSeason && combined))
 	) {
 		// Take last value, in case player was traded/signed to team twice in a season
 		output.stats = output.stats.at(-1);
@@ -697,30 +774,47 @@ const processStats = (
 		const ignoredKeys = ["season", "tid", "yearsWithTeam", "jerseyNumber"];
 		const statSums: any = {};
 		const statSumsPlayoffs: any = {};
+		const statSumsCombined: any = {};
 		const attrs = careerStats.length > 0 ? Object.keys(careerStats.at(-1)) : [];
 
 		for (const attr of attrs) {
 			if (!ignoredKeys.includes(attr)) {
-				statSums[attr] = reduceCareerStats(careerStats, attr, false);
-				statSumsPlayoffs[attr] = reduceCareerStats(careerStats, attr, true);
+				if (regularSeason) {
+					statSums[attr] = reduceCareerStats(
+						careerStats,
+						attr,
+						"regularSeason",
+						mergeStats,
+					);
+				}
+				if (playoffs) {
+					statSumsPlayoffs[attr] = reduceCareerStats(
+						careerStats,
+						attr,
+						"playoffs",
+						mergeStats,
+					);
+				}
+				if (combined) {
+					statSumsCombined[attr] = reduceCareerStats(
+						careerStats,
+						attr,
+						"combined",
+						mergeStats,
+					);
+				}
 			}
 		}
 
 		// Special case for some variables, weight by minutes
 		for (const attr of weightByMinutes) {
-			if (Object.hasOwn(statSums, attr)) {
-				if (statSums.min > 0) {
-					statSums[attr] /= statSums.min;
-				} else {
-					statSums[attr] = 0;
-				}
-			}
-
-			if (Object.hasOwn(statSumsPlayoffs, attr)) {
-				if (statSumsPlayoffs.min > 0) {
-					statSumsPlayoffs[attr] /= statSumsPlayoffs.min;
-				} else {
-					statSumsPlayoffs[attr] = 0;
+			for (const object of [statSums, statSumsPlayoffs, statSumsCombined]) {
+				if (Object.hasOwn(object, attr)) {
+					if (object.min > 0) {
+						object[attr] /= object.min;
+					} else {
+						object[attr] = 0;
+					}
 				}
 			}
 		}
@@ -733,6 +827,15 @@ const processStats = (
 			output.careerStatsPlayoffs = processPlayerStats(
 				p,
 				statSumsPlayoffs,
+				stats,
+				statType,
+			);
+		}
+
+		if (combined) {
+			output.careerStatsCombined = processPlayerStats(
+				p,
+				statSumsCombined,
 				stats,
 				statType,
 			);
@@ -830,6 +933,7 @@ const getCopies = async (
 		stats = [],
 		playoffs = false,
 		regularSeason = true,
+		combined = false,
 		showNoStats = false,
 		showRookies = false,
 		showRetired = false,
@@ -855,6 +959,7 @@ const getCopies = async (
 		stats,
 		playoffs,
 		regularSeason,
+		combined,
 		showNoStats,
 		showRookies,
 		showDraftProspectRookieRatings,

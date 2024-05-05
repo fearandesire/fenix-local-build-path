@@ -5,7 +5,7 @@ import { defaultGameAttributes, g, local } from "../worker/util";
 import "smoke-test-overrides"; // eslint-disable-line
 import { deleteDB } from "idb";
 import createStreamFromLeagueObject from "../worker/core/league/create/createStreamFromLeagueObject";
-import { helpers, MAX_SUPPORTED_LEAGUE_VERSION } from "../common";
+import { helpers, LEAGUE_DATABASE_VERSION } from "../common";
 
 describe("Smoke Tests", () => {
 	let intervalID: number;
@@ -27,7 +27,7 @@ describe("Smoke Tests", () => {
 				maxGid: undefined,
 				startingSeason: undefined,
 				teams: undefined,
-				version: MAX_SUPPORTED_LEAGUE_VERSION,
+				version: LEAGUE_DATABASE_VERSION,
 			},
 			getLeagueOptions: undefined,
 			keptKeys: new Set(),
@@ -49,8 +49,9 @@ describe("Smoke Tests", () => {
 		return new Promise(resolve => {
 			intervalID = window.setInterval(() => {
 				if (g.get("season") === 2017) {
-					clearInterval(intervalID); // Wait to let it finish whatever DB activity might still be ongoing (like flushing cache)
+					clearInterval(intervalID);
 
+					// Wait to let it finish whatever DB activity might still be ongoing (like flushing cache)
 					setTimeout(resolve, 5000);
 				}
 			}, 500);

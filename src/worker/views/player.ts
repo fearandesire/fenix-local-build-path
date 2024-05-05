@@ -25,9 +25,14 @@ import type {
 	UpdateEvents,
 	ViewInput,
 } from "../../common/types";
-import orderBy from "lodash-es/orderBy";
+import { orderBy } from "../../common/utils";
 
 const fixRatingsStatsAbbrevs = async (p: {
+	draft?: {
+		abbrev: string;
+		tid: number;
+		year: number;
+	};
 	ratings?: {
 		abbrev: string;
 		season: number;
@@ -52,6 +57,13 @@ const fixRatingsStatsAbbrevs = async (p: {
 					}
 				}
 			}
+		}
+	}
+
+	if (p.draft) {
+		const info = await getTeamInfoBySeason(p.draft.tid, p.draft.year);
+		if (info) {
+			p.draft.abbrev = info.abbrev;
 		}
 	}
 };
@@ -147,6 +159,7 @@ export const getCommon = async (pid?: number, season?: number) => {
 				})[];
 				stats: Stats[];
 				careerStats: Stats;
+				careerStatsCombined: Stats;
 				careerStatsPlayoffs: Stats;
 				jerseyNumber?: string;
 				experience: number;
@@ -198,6 +211,7 @@ export const getCommon = async (pid?: number, season?: number) => {
 		],
 		stats: ["season", "tid", "abbrev", "age", "jerseyNumber", ...stats],
 		playoffs: true,
+		combined: true,
 		showRookies: true,
 		fuzz: true,
 		mergeStats: "totAndTeams",
@@ -286,7 +300,7 @@ export const getCommon = async (pid?: number, season?: number) => {
 		const key = JSON.stringify([
 			jerseyNumber,
 			t?.tid,
-			t?.colors,
+			t?.colors?.map(x => x.toUpperCase()),
 			t?.name,
 			t?.region,
 		]);
@@ -428,7 +442,7 @@ export const getCommon = async (pid?: number, season?: number) => {
 
 			// Jersey number
 			const stats = p.stats.findLast(
-				row => row.season === season && !row.playoffs,
+				row => row.season === season && !row.playoffs && row.tid >= 0,
 			);
 			if (stats) {
 				if (stats.jerseyNumber !== undefined) {
@@ -521,7 +535,7 @@ const updatePlayer = async (
 								dpid: p.draft.dpid,
 							},
 							"noCopyCache",
-					  )
+						)
 					: []),
 			],
 			"eid",

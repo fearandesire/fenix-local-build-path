@@ -76,7 +76,7 @@ const PlayerStats = ({
 			teamsAndAllWatch: abbrev,
 			seasonsAndCareer: season,
 			statTypesAdv: statType,
-			playoffs,
+			playoffsCombined: playoffs,
 		},
 	});
 
@@ -114,10 +114,18 @@ const PlayerStats = ({
 		}
 	}
 
-	let statsProperty: "careerStats" | "careerStatsPlayoffs" | "stats";
+	let statsProperty:
+		| "careerStats"
+		| "careerStatsPlayoffs"
+		| "careerStatsCombined"
+		| "stats";
 	if (season === "career") {
 		statsProperty =
-			playoffs === "playoffs" ? "careerStatsPlayoffs" : "careerStats";
+			playoffs === "playoffs"
+				? "careerStatsPlayoffs"
+				: playoffs === "combined"
+				? "careerStatsCombined"
+				: "careerStats";
 	} else {
 		statsProperty = "stats";
 	}

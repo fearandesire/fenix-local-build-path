@@ -24,10 +24,13 @@ const PlayerTeam = ({
 	p,
 	season,
 }: {
-	p: {
-		abbrev: string;
-		tid: number;
-	};
+	children: any;
+	p:
+		| {
+				abbrev: string;
+				tid: number;
+		  }
+		| undefined;
 	season: number;
 }) => {
 	if (!p) {
@@ -45,11 +48,13 @@ const resultText = ({
 	gid,
 	overtimes,
 	score,
+	sPts,
 	teamNames,
 }: {
 	gid?: number;
 	overtimes?: number;
 	score?: [number, number];
+	sPts?: [number, number];
 	season: number;
 	teamNames: [string, string];
 }) => {
@@ -71,7 +76,7 @@ const resultText = ({
 		}
 	}
 
-	return `${teamNames[tw]} ${score[tw]}, ${teamNames[tl]} ${score[tl]}${{
+	return `${teamNames[tw]} ${score[tw]}${sPts ? ` (${sPts[tw]})` : ""}, ${teamNames[tl]} ${score[tl]}${sPts ? ` (${sPts[tl]})` : ""},${{
 		overtimeText,
 	}}`;
 };
@@ -80,12 +85,14 @@ const ResultText = ({
 	overtimes,
 	score,
 	season,
+	sPts,
 	teamNames,
 }: {
 	gid?: number;
 	overtimes?: number;
 	score?: [number, number];
 	season: number;
+	sPts?: [number, number];
 	teamNames: [string, string];
 }) => {
 	if (gid === undefined || overtimes === undefined || score === undefined) {
@@ -105,7 +112,9 @@ const ResultText = ({
 	return (
 		<>
 			<a href={helpers.leagueUrl(["game_log", "special", season, gid])}>
-				{teamNames[tw]} {score[tw]}, {teamNames[tl]} {score[tl]}
+				{teamNames[tw]} {score[tw]}
+				{sPts ? ` (${sPts[tw]})` : ""}, {teamNames[tl]} {score[tl]}
+				{sPts ? ` (${sPts[tl]})` : ""}
 			</a>
 			{overtimeText}
 		</>
@@ -143,6 +152,7 @@ const AllStarHistory = ({ allAllStars, userTid }: View<"allStarHistory">) => {
 			row.three && row.three.tid === userTid ? "table-info" : "";
 
 		const rowResultText = resultText(row);
+		console.log(row);
 
 		return {
 			key: row.season,
@@ -157,6 +167,7 @@ const AllStarHistory = ({ allAllStars, userTid }: View<"allStarHistory">) => {
 							overtimes={row.overtimes}
 							score={row.score}
 							season={row.season}
+							sPts={row.sPts}
 							teamNames={row.teamNames}
 						/>
 					),
@@ -168,7 +179,6 @@ const AllStarHistory = ({ allAllStars, userTid }: View<"allStarHistory">) => {
 				{
 					classNames: classNamesCaptain1,
 					value: (
-						// @ts-expect-error
 						<PlayerTeam p={row.captain1} season={row.season}>
 							{row.captain1 ? row.captain1.abbrev : "???"}
 						</PlayerTeam>
@@ -181,7 +191,6 @@ const AllStarHistory = ({ allAllStars, userTid }: View<"allStarHistory">) => {
 				{
 					classNames: classNamesCaptain2,
 					value: (
-						// @ts-expect-error
 						<PlayerTeam p={row.captain2} season={row.season}>
 							{row.captain2 ? row.captain2.abbrev : "???"}
 						</PlayerTeam>
@@ -194,7 +203,6 @@ const AllStarHistory = ({ allAllStars, userTid }: View<"allStarHistory">) => {
 				{
 					classNames: classNamesMVP,
 					value: (
-						// @ts-expect-error
 						<PlayerTeam p={row.mvp} season={row.season}>
 							{row.mvp ? row.mvp.abbrev : "???"}
 						</PlayerTeam>
@@ -209,7 +217,6 @@ const AllStarHistory = ({ allAllStars, userTid }: View<"allStarHistory">) => {
 							{
 								classNames: classNamesDunk,
 								value: (
-									// @ts-expect-error
 									<PlayerTeam p={row.dunk} season={row.season}>
 										{row.dunk ? row.dunk.abbrev : "???"}
 									</PlayerTeam>
@@ -222,13 +229,12 @@ const AllStarHistory = ({ allAllStars, userTid }: View<"allStarHistory">) => {
 							{
 								classNames: classNamesThree,
 								value: (
-									// @ts-expect-error
 									<PlayerTeam p={row.three} season={row.season}>
 										{row.three ? row.three.abbrev : "???"}
 									</PlayerTeam>
 								),
 							},
-					  ]
+						]
 					: []),
 				<>
 					<a href={helpers.leagueUrl(["all_star", "teams", row.season])}>

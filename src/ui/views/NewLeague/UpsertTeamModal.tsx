@@ -1,10 +1,9 @@
-import orderBy from "lodash-es/orderBy";
-import range from "lodash-es/range";
 import { useCallback, useEffect, useState } from "react";
 import { applyRealTeamInfos, MAX_SEASON, MIN_SEASON } from ".";
 import {
 	DEFAULT_JERSEY,
 	DEFAULT_STADIUM_CAPACITY,
+	DEFAULT_TEAM_COLORS,
 	SPORT_HAS_REAL_PLAYERS,
 } from "../../../common";
 import getTeamInfos from "../../../common/getTeamInfos";
@@ -19,6 +18,8 @@ import {
 import TeamForm from "../ManageTeams/TeamForm";
 import type { AddEditTeamInfo } from "./CustomizeTeams";
 import type { NewLeagueTeamWithoutRank } from "./types";
+import { TeamsSplitNorthAmericaWorld } from "../../components/TeamsSplitNorthAmericaWorld";
+import { orderBy, range } from "../../../common/utils";
 
 export const getGodModeWarnings = ({
 	is,
@@ -32,7 +33,7 @@ export const getGodModeWarnings = ({
 	};
 	godModeLimits: View<"newLeague">["godModeLimits"];
 }) => {
-	const pop = t ? parseFloat(t.pop) : NaN;
+	const pop = t ? helpers.localeParseFloat(t.pop) : NaN;
 	const stadiumCapacity = t ? parseInt(t.stadiumCapacity) : NaN;
 
 	const errors = [];
@@ -406,25 +407,36 @@ const SelectTeam = ({
 							) : availableTeams === undefined ? (
 								<option value="loading">Loading...</option>
 							) : null}
-							{availableTeams?.map(t => (
-								<option key={t.abbrev} value={t.abbrev}>
-									{t.region} {t.name} ({t.abbrev})
-									{t.seasonInfo
-										? ` ${helpers.formatRecord(t.seasonInfo)}${
-												t.seasonInfo.roundsWonText
-													? `, ${t.seasonInfo.roundsWonText.toLowerCase()}`
-													: ""
-										  }`
-										: null}
-								</option>
-							))}
+							{addEditTeamInfo.addType === "random" && availableTeams ? (
+								<TeamsSplitNorthAmericaWorld
+									teams={availableTeams}
+									option={t => (
+										<option key={t.abbrev} value={t.abbrev}>
+											{t.region} {t.name} ({t.abbrev})
+										</option>
+									)}
+								/>
+							) : (
+								availableTeams?.map(t => (
+									<option key={t.abbrev} value={t.abbrev}>
+										{t.region} {t.name} ({t.abbrev})
+										{t.seasonInfo
+											? ` ${helpers.formatRecord(t.seasonInfo)}${
+													t.seasonInfo.roundsWonText
+														? `, ${t.seasonInfo.roundsWonText.toLowerCase()}`
+														: ""
+											  }`
+											: null}
+									</option>
+								))
+							)}
 						</select>
 						<button
 							className="btn btn-light-bordered"
 							type="button"
 							disabled={actualDisabled}
 							onClick={async () => {
-								if (league) {
+								if (addEditTeamInfo.addType !== "random" && league) {
 									const randomSeason = getRandomSeason(
 										league.seasonStart,
 										league.seasonEnd,
@@ -518,7 +530,7 @@ const UpsertTeamModal = ({
 					stadiumCapacity: String(
 						t.stadiumCapacity ?? DEFAULT_STADIUM_CAPACITY,
 					),
-					colors: t.colors ?? ["#000000", "#cccccc", "#ffffff"],
+					colors: t.colors ?? DEFAULT_TEAM_COLORS,
 					jersey: t.jersey ?? DEFAULT_JERSEY,
 					did: String(addEditTeamInfo.did),
 					imgURL: t.imgURL ?? "",
@@ -568,7 +580,7 @@ const UpsertTeamModal = ({
 			region: controlledTeam.region,
 			name: controlledTeam.name,
 			abbrev: controlledTeam.abbrev,
-			pop: parseFloat(controlledTeam.pop),
+			pop: helpers.localeParseFloat(controlledTeam.pop),
 			stadiumCapacity: parseInt(controlledTeam.stadiumCapacity),
 			colors: controlledTeam.colors,
 			jersey: controlledTeam.jersey,

@@ -49,7 +49,7 @@ const developOneSeason = async (p: Player) => {
 
 const genPlayersWithoutSaving = async (
 	draftYear: number,
-	scoutingRank: number,
+	scoutingLevel: number,
 	existingPlayers: PlayerWithoutKey<MinimalPlayerRatings>[],
 	forceScrubs?: boolean,
 ): Promise<PlayerWithoutKey<MinimalPlayerRatings>[]> => {
@@ -63,20 +63,25 @@ const genPlayersWithoutSaving = async (
 		normalNumPlayers,
 	);
 
-	// Based on draftAges and forceRetireAge settings, check how many players we need per draft class to fill the league. KEEP IN SYNC WITH LEAGUE CREATION seasonsSimmed
+	// Based on draftAges, forceRetireAge, and forceRetireSeasons settings, check how many players we need per draft class to fill the league. KEEP IN SYNC WITH LEAGUE CREATION seasonsSimmed
 	const draftAges = g.get("draftAges");
 	const forceRetireAge = g.get("forceRetireAge");
+	const forceRetireSeasons = g.get("forceRetireSeasons");
 	const averageDraftAge = Math.round((draftAges[0] + draftAges[1]) / 2); // Ideally this would be more intelligently determined, based on getFractionPerYear
 	const forceRetireAgeDiff = forceRetireAge - averageDraftAge;
-	if (forceRetireAgeDiff > 0) {
+	let forceRetireDiff = 0;
+	if (forceRetireAgeDiff > 0 && forceRetireSeasons > 0) {
+		forceRetireDiff = Math.min(forceRetireAgeDiff, forceRetireSeasons);
+	} else {
+		forceRetireDiff = Math.max(forceRetireAgeDiff, forceRetireSeasons);
+	}
+	if (forceRetireAgeDiff > 0 || forceRetireSeasons > 0) {
 		const numActivePlayers =
 			(g.get("maxRosterSize") + 1) * g.get("numActiveTeams");
-
-		const numSeasonsPerPlayer = forceRetireAgeDiff;
+		const numSeasonsPerPlayer = forceRetireDiff;
 		const numPlayersNeededPerYear = Math.ceil(
 			numActivePlayers / numSeasonsPerPlayer,
 		);
-
 		if (numPlayersNeededPerYear > baseNumPlayers) {
 			baseNumPlayers = numPlayersNeededPerYear;
 		}
@@ -109,7 +114,7 @@ const genPlayersWithoutSaving = async (
 			baseAge,
 			draftYear,
 			false,
-			scoutingRank,
+			scoutingLevel,
 			name,
 		);
 

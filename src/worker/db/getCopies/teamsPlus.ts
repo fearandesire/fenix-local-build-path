@@ -1,4 +1,3 @@
-import orderBy from "lodash-es/orderBy";
 import { maybeDeepCopy, mergeByPk } from "./helpers";
 import { team } from "../../core";
 import { idb } from "..";
@@ -14,6 +13,7 @@ import type {
 	GetCopyType,
 } from "../../../common/types";
 import { DEFAULT_POINTS_FORMULA } from "../../../common";
+import { orderBy } from "../../../common/utils";
 
 const processAttrs = <
 	Attrs extends Readonly<TeamAttr[]>,
@@ -27,15 +27,7 @@ const processAttrs = <
 ) => {
 	for (const attr of attrs) {
 		if (attr === "budget") {
-			// Always copy, because we mutate below to convert units
 			output.budget = helpers.deepCopy(t.budget);
-
-			for (const [key, value] of Object.entries(output.budget)) {
-				if (key !== "ticketPrice") {
-					// ticketPrice is the only thing in dollars always
-					value.amount /= 1000;
-				}
-			}
 		} else {
 			// @ts-expect-error
 			output[attr] = t[attr];
@@ -114,26 +106,17 @@ const processSeasonAttrs = async <
 
 			const revenue = helpers
 				.keys(ts.revenues)
-				.reduce((memo, rev) => memo + ts.revenues[rev].amount, 0);
+				.reduce((memo, rev) => memo + ts.revenues[rev], 0);
 			const expense = helpers
 				.keys(ts.expenses)
-				.reduce((memo, rev) => memo + ts.expenses[rev].amount, 0);
+				.reduce((memo, rev) => memo + ts.expenses[rev], 0);
 
 			for (const temp of seasonAttrs) {
 				const attr: string = temp;
 				if (attr === "winp") {
 					row.winp = helpers.calcWinp(ts);
 				} else if (attr === "att") {
-					row.att = 0;
-
-					if (ts.gpHome === undefined) {
-						ts.gpHome = Math.round(ts.gp / 2);
-					}
-
-					// See also game.js and teamFinances.js
-					if (ts.gpHome > 0) {
-						row.att = ts.att / ts.gpHome;
-					}
+					row.att = ts.gpHome > 0 ? ts.att / ts.gpHome : 0;
 				} else if (attr === "cash") {
 					row.cash = ts.cash / 1000; // [millions of dollars]
 				} else if (attr === "revenue") {
@@ -141,7 +124,7 @@ const processSeasonAttrs = async <
 				} else if (attr === "profit") {
 					row.profit = (revenue - expense) / 1000; // [millions of dollars]
 				} else if (attr === "salaryPaid") {
-					row.salaryPaid = ts.expenses.salary.amount / 1000; // [millions of dollars]
+					row.salaryPaid = ts.expenses.salary / 1000; // [millions of dollars]
 				} else if (attr === "payroll") {
 					if (season === g.get("season")) {
 						row.payroll = (await team.getPayroll(t.tid)) / 1000;
@@ -186,6 +169,33 @@ const processSeasonAttrs = async <
 				} else if (attr === "avgAge") {
 					// Will be undefined if not cached, in which case will need to be dynamically computed elsewhere
 					row.avgAge = ts[attr];
+				} else if (attr === "expenseLevels") {
+					if (ts.season === g.get("season")) {
+						// For current season, we want the current values, not what we spent this season. That's what we want on League Finances at least, which is the only place this is used for now.
+						row.expenseLevels = {
+							coaching: t.budget.coaching,
+							facilities: t.budget.facilities,
+							health: t.budget.health,
+							scouting: t.budget.scouting,
+						};
+					} else {
+						const gp = helpers.getTeamSeasonGp(ts);
+						if (gp > 0) {
+							row.expenseLevels = {
+								coaching: Math.round(ts.expenseLevels.coaching / gp),
+								facilities: Math.round(ts.expenseLevels.facilities / gp),
+								health: Math.round(ts.expenseLevels.health / gp),
+								scouting: Math.round(ts.expenseLevels.scouting / gp),
+							};
+						} else {
+							row.expenseLevels = {
+								coaching: 0,
+								facilities: 0,
+								health: 0,
+								scouting: 0,
+							};
+						}
+					}
 				} else {
 					// @ts-expect-error
 					row[attr] = ts[attr];

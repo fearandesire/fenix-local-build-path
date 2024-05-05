@@ -1,4 +1,3 @@
-import orderBy from "lodash-es/orderBy";
 import { bySport, isSport, PLAYER, POSITIONS } from "../../../common";
 import developSeason from "./developSeason";
 import ovr from "./ovr";
@@ -10,6 +9,7 @@ import genWeight from "./genWeight";
 import potEstimator from "./potEstimator";
 import { BANNED_POSITIONS } from "./pos.baseball";
 import { TOO_MANY_TEAMS_TOO_SLOW } from "../season/getInitialNumGamesConfDivSettings";
+import { DEFAULT_LEVEL } from "../../../common/budgetLevels";
 
 const NUM_SIMULATIONS = 20; // Higher is more accurate, but slower. Low accuracy is fine, though!
 
@@ -71,7 +71,7 @@ export const monteCarloPot = async ({
 		let maxOvr = pos ? ratings.ovrs[pos] : ratings.ovr;
 
 		for (let ageTemp = age + 1; ageTemp < 30; ageTemp++) {
-			await developSeason(copiedRatings, ageTemp, srID); // Purposely no coachingRank
+			await developSeason(copiedRatings, ageTemp, srID); // Purposely no coachingLevel
 
 			const currentOvr = ovr(copiedRatings, pos);
 
@@ -83,7 +83,7 @@ export const monteCarloPot = async ({
 		maxOvrs.push(maxOvr);
 	}
 
-	return orderBy(maxOvrs)[Math.floor(0.75 * NUM_SIMULATIONS)];
+	return maxOvrs.sort((a, b) => a - b)[Math.floor(0.75 * NUM_SIMULATIONS)];
 };
 
 /**
@@ -95,7 +95,7 @@ export const monteCarloPot = async ({
  * @param {Object} p Player object.
  * @param {number=} years Number of years to develop (default 1).
  * @param {boolean=} newPlayer Generating a new player? (default false). If true, then the player's age is also updated based on years.
- * @param {number=} coachingRank From 1 to g.get("numActiveTeams") (default 30), where 1 is best coaching staff and g.get("numActiveTeams") is worst. Default is 15.5
+ * @param {number=} coachingLevel
  * @return {Object} Updated player object.
  */
 const develop = async (
@@ -117,7 +117,7 @@ const develop = async (
 	},
 	years: number = 1,
 	newPlayer: boolean = false,
-	coachingRank: number = (g.get("numActiveTeams") + 1) / 2,
+	coachingLevel: number = DEFAULT_LEVEL,
 	skipPot: boolean = false, // Only for making testing or core/debug faster
 ) => {
 	const ratings = p.ratings.at(-1)!;
@@ -130,7 +130,7 @@ const develop = async (
 		}
 
 		if (!ratings.locked) {
-			await developSeason(ratings, age, p.srID, coachingRank);
+			await developSeason(ratings, age, p.srID, coachingLevel);
 		}
 	}
 

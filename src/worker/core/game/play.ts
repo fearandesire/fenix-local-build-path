@@ -2,7 +2,6 @@ import { ALL_STAR_GAME_ONLY, isSport, PHASE } from "../../../common";
 import {
 	GameSim,
 	allStar,
-	finances,
 	freeAgents,
 	phase,
 	player,
@@ -36,6 +35,7 @@ import type {
 	UpdateEvents,
 } from "../../../common/types";
 import allowForceTie from "../../../common/allowForceTie";
+import getWinner from "../../../common/getWinner";
 
 /**
  * Play one or more days of games.
@@ -156,9 +156,6 @@ const play = async (
 		const updateEvents: UpdateEvents = ["gameSim"];
 
 		if (dayOver) {
-			// Budget is just for ticket prices
-			await finances.updateRanks(["budget", "expenses", "revenues"]);
-
 			local.minFractionDiffs = undefined;
 
 			const healedTexts: string[] = [];
@@ -253,7 +250,8 @@ const play = async (
 			// Tragic deaths only happen during the regular season!
 			if (
 				g.get("phase") !== PHASE.PLAYOFFS &&
-				Math.random() < g.get("tragicDeathRate")
+				Math.random() < g.get("tragicDeathRate") &&
+				!g.get("repeatSeason")
 			) {
 				await player.killOne(conditions);
 
@@ -394,7 +392,7 @@ const play = async (
 				!allowForceTie({
 					homeTid: game.homeTid,
 					awayTid: game.awayTid,
-					ties: g.get("ties", "current"),
+					ties: season.hasTies("current"),
 					phase: g.get("phase"),
 					elam: g.get("elam"),
 					elamASG: g.get("elamASG"),
@@ -448,11 +446,12 @@ const play = async (
 						homeCourtFactor,
 					});
 
+					const winner = getWinner([result.team[0].stat, result.team[1].stat]);
 					let wonTid: number | undefined;
-					if (result.team[0].stat.pts > result.team[1].stat.pts) {
+					if (winner === 0) {
 						wonTid = result.team[0].id;
 						homeWonLastGame = true;
-					} else if (result.team[0].stat.pts < result.team[1].stat.pts) {
+					} else if (winner === 1) {
 						wonTid = result.team[1].id;
 						homeWonLastGame = false;
 					}

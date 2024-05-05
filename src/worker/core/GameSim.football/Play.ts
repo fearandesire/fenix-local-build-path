@@ -1,6 +1,15 @@
 import type GameSim from ".";
+import { PHASE } from "../../../common";
+import { g } from "../../util";
 import getBestPenaltyResult from "./getBestPenaltyResult";
 import type { PlayerGameSim, TeamNum } from "./types";
+
+export const SCRIMMAGE_KICKOFF = 35;
+const SCRIMMAGE_KICKOFF_SAFETY = 20;
+export const SCRIMMAGE_EXTRA_POINT = 85;
+export const SCRIMMAGE_TWO_POINT_CONVERSION = 98;
+const SCRIMMAGE_TOUCHBACK_KICKOFF = 25;
+const SCRIMMAGE_TOUCHBACK = 20;
 
 type PlayEvent =
 	| {
@@ -184,6 +193,7 @@ type PlayState = Pick<
 	| "awaitingAfterSafety"
 	| "awaitingAfterTouchdown"
 	| "overtimeState"
+	| "playUntimedPossession"
 >;
 
 type StatChange = Parameters<GameSim["recordStat"]>;
@@ -199,6 +209,7 @@ export class State {
 	awaitingAfterSafety: PlayState["awaitingAfterSafety"];
 	awaitingAfterTouchdown: PlayState["awaitingAfterTouchdown"];
 	overtimeState: PlayState["overtimeState"];
+	playUntimedPossession: PlayState["playUntimedPossession"];
 
 	downIncremented: boolean;
 	firstDownLine: number;
@@ -241,6 +252,7 @@ export class State {
 		this.awaitingAfterSafety = gameSim.awaitingAfterSafety;
 		this.awaitingAfterTouchdown = gameSim.awaitingAfterTouchdown;
 		this.overtimeState = gameSim.overtimeState;
+		this.playUntimedPossession = gameSim.playUntimedPossession;
 
 		this.downIncremented = downIncremented;
 		this.firstDownLine = firstDownLine ?? this.scrimmage + this.toGo;
@@ -315,6 +327,7 @@ type WrappedPenaltyEvent = {
 	statChanges: StatChange[];
 	penaltyInfo: {
 		halfDistanceToGoal: boolean;
+		onDefense: boolean;
 		penYdsSigned: number;
 		placeOnOne: boolean;
 	};
@@ -561,8 +574,11 @@ class Play {
 
 		const placeOnOne = side === "def" && state.scrimmage + penYdsSigned > 99;
 
+		const onDefense = event.t === state.d;
+
 		return {
 			halfDistanceToGoal,
+			onDefense,
 			penYdsSigned,
 			placeOnOne,
 		};
@@ -611,7 +627,7 @@ class Play {
 		} else if (event.type === "k" || event.type === "onsideKick") {
 			state.scrimmage = 100 - event.kickTo;
 		} else if (event.type === "touchbackKick") {
-			state.scrimmage = 25;
+			state.scrimmage = SCRIMMAGE_TOUCHBACK_KICKOFF;
 		} else if (event.type === "kr") {
 			state.scrimmage += event.yds;
 		} else if (event.type === "onsideKickRecovery") {
@@ -622,9 +638,9 @@ class Play {
 		} else if (event.type === "p") {
 			state.scrimmage += event.yds;
 		} else if (event.type === "touchbackPunt") {
-			state.scrimmage = 20;
+			state.scrimmage = SCRIMMAGE_TOUCHBACK;
 		} else if (event.type === "touchbackInt") {
-			state.scrimmage = 20;
+			state.scrimmage = SCRIMMAGE_TOUCHBACK;
 		} else if (event.type === "pr") {
 			state.scrimmage += event.yds;
 		} else if (event.type === "rus") {
@@ -652,6 +668,7 @@ class Play {
 		} else if (event.type === "fg" || event.type === "xp") {
 			if (event.type === "xp" || event.made) {
 				state.awaitingKickoff = this.state.initial.o;
+				state.scrimmage = SCRIMMAGE_KICKOFF;
 			}
 
 			if (event.type === "xp" && !event.made) {
@@ -666,8 +683,6 @@ class Play {
 			state.isClockRunning = false;
 		} else if (event.type === "twoPointConversion") {
 			state.twoPointConversionTeam = event.t;
-			state.down = 1;
-			state.scrimmage = 98;
 		} else if (event.type === "twoPointConversionDone") {
 			// Reset off/def teams in case there was a turnover during the conversion attempt
 			state.o = event.t;
@@ -675,10 +690,12 @@ class Play {
 
 			state.twoPointConversionTeam = undefined;
 			state.awaitingKickoff = event.t;
+			state.scrimmage = SCRIMMAGE_KICKOFF;
 			state.awaitingAfterTouchdown = false;
 			state.isClockRunning = false;
 		} else if (event.type === "defSft") {
 			state.awaitingKickoff = state.o;
+			state.scrimmage = SCRIMMAGE_KICKOFF_SAFETY;
 			state.awaitingAfterSafety = true;
 			state.isClockRunning = false;
 		} else if (event.type === "fmb") {
@@ -759,7 +776,7 @@ class Play {
 		if (event.type === "fmbRec") {
 			if (state.scrimmage <= 0) {
 				if (event.lost) {
-					state.scrimmage = 20;
+					state.scrimmage = SCRIMMAGE_TOUCHBACK;
 					touchback = true;
 				} else {
 					safety = true;
@@ -771,8 +788,9 @@ class Play {
 
 		if (event.type.endsWith("TD")) {
 			if (
-				state.overtimeState === "initialKickoff" ||
-				state.overtimeState === "firstPossession"
+				(state.overtimeState === "initialKickoff" ||
+					state.overtimeState === "firstPossession") &&
+				g.get("phase") !== PHASE.PLAYOFFS
 			) {
 				state.overtimeState = "over";
 			}
@@ -818,16 +836,18 @@ class Play {
 
 	checkDownAtEndOfPlay(state: State) {
 		// In endzone at end of play
-		if (
-			state.scrimmage >= 100 ||
-			state.scrimmage <= 0 ||
-			state.numPossessionChanges > 0
-		) {
+		if (state.scrimmage >= 100 || state.scrimmage <= 0) {
 			return;
 		}
 
-		// No first down or turnover on downs if extra point or two point conversion - see issue #396
-		if (state.awaitingAfterTouchdown) {
+		// No first down or turnover on downs if extra point or two-point conversion - see issue #396
+		if (state.awaitingAfterTouchdown || state.awaitingAfterSafety) {
+			return;
+		}
+
+		// If the ball moved after the change in possession, we need to compute values (especially toGo) for a new first down, otherwise you can get stuff like 1st & 10 from the 4 yard line when it should be 1st & goal.
+		if (state.numPossessionChanges > 0) {
+			state.newFirstDown();
 			return;
 		}
 
@@ -948,7 +968,7 @@ class Play {
 		return this.penaltyRollbacks.length;
 	}
 
-	adjudicatePenalties() {
+	adjudicatePenalties(timeExpiredAtEndOfHalf: boolean) {
 		const penalties = this.events.filter(
 			event => event.event.type === "penalty",
 		) as WrappedPenaltyEvent[];
@@ -1141,6 +1161,10 @@ class Play {
 								state.isClockRunning = false;
 							} else {
 								this.updateState(state, penalty.event);
+
+								if (penalty.penaltyInfo.onDefense && timeExpiredAtEndOfHalf) {
+									state.playUntimedPossession = true;
+								}
 							}
 
 							this.checkDownAtEndOfPlay(state);
@@ -1162,14 +1186,20 @@ class Play {
 				})
 				.flat();
 
+			const gameCanEndAtEndOfPeriod =
+				this.g.team[0].stat.ptsQtrs.length >= this.g.numPeriods;
+
 			const result = getBestPenaltyResult(
 				results,
 				this.state.initial,
 				choosingTeam,
+				timeExpiredAtEndOfHalf,
+				gameCanEndAtEndOfPeriod,
 			);
 
 			if (result.decisions.length > 1) {
-				this.g.playByPlay.logEvent("penaltyCount", {
+				this.g.playByPlay.logEvent({
+					type: "penaltyCount",
 					clock: this.g.clock,
 					count: result.decisions.length,
 					offsetStatus,
@@ -1193,19 +1223,22 @@ class Play {
 						spotFoul = false;
 					}
 
-					this.g.playByPlay.logEvent("penalty", {
+					this.g.playByPlay.logEvent({
+						type: "penalty",
+						automaticFirstDown: penalty.event.automaticFirstDown,
 						clock: this.g.clock,
 						decision,
-						offsetStatus,
-						t: penalty.event.t,
-						names: penalty.event.p ? [penalty.event.p.name] : [],
-						automaticFirstDown: penalty.event.automaticFirstDown,
-						penaltyName: penalty.event.name,
-						yds,
-						spotFoul,
 						halfDistanceToGoal: penalty.penaltyInfo.halfDistanceToGoal,
+						names: penalty.event.p ? [penalty.event.p.name] : [],
+						offsetStatus,
+						penaltyName: penalty.event.name,
+						possessionAfter: result.state.o,
 						placeOnOne: penalty.penaltyInfo.placeOnOne,
+						scrimmageAfter: result.state.scrimmage,
+						spotFoul,
+						t: penalty.event.t,
 						tackOn: result.tackOn,
+						yds,
 					});
 				}
 			}
@@ -1214,8 +1247,6 @@ class Play {
 			this.state.current = result.state;
 
 			if (result.indexAccept >= 0 || offsetStatus === "offset") {
-				let numPenaltiesSeen = 0;
-
 				const statChanges = [
 					// Apply statChanges from accepted penalty
 					...result.statChanges,
@@ -1223,13 +1254,9 @@ class Play {
 					// Apply negative statChanges from anything after accepted penalty
 					...this.events
 						.filter((event, i) => {
-							// Don't remove the accepted penalty, since we only just added it here! It is not like other events which are added previously
+							// Don't undo any penalties (whether accepted or not) because they are never added to stats, except from result.statChanges right above here
 							if (event.event.type === "penalty") {
-								if (result.indexAccept === numPenaltiesSeen) {
-									numPenaltiesSeen += 1;
-									return false;
-								}
-								numPenaltiesSeen += 1;
+								return false;
 							}
 
 							return result.indexEvent === undefined || i > result.indexEvent;
@@ -1254,43 +1281,49 @@ class Play {
 				for (const statChange of statChanges) {
 					this.g.recordStat(...statChange);
 				}
+
+				// Do we need to revert a score (or missed field goal) for a penalty?
+				if (
+					statChanges.some(
+						([, p, stat]) =>
+							(stat === "pts" && p === undefined) || stat.startsWith("fga"),
+					)
+				) {
+					this.g.playByPlay.removeLastScore();
+				}
 			}
 		}
 	}
 
-	commit() {
+	commit(timeExpiredAtEndOfHalf: boolean) {
 		this.checkDownAtEndOfPlay(this.state.current);
-		this.adjudicatePenalties();
+		this.adjudicatePenalties(timeExpiredAtEndOfHalf);
 
 		if (this.state.current.turnoverOnDowns) {
-			this.g.playByPlay.logEvent("turnoverOnDowns", {
+			this.g.playByPlay.logEvent({
+				type: "turnoverOnDowns",
 				clock: this.g.clock,
+				t: this.state.current.d,
 			});
 		}
 
-		const {
-			down,
-			toGo,
-			scrimmage,
-			o,
-			d,
-			isClockRunning,
-			awaitingKickoff,
-			awaitingAfterSafety,
-			awaitingAfterTouchdown,
-			overtimeState,
-		} = this.state.current;
+		const keysToApply = [
+			"down",
+			"toGo",
+			"scrimmage",
+			"o",
+			"d",
+			"isClockRunning",
+			"awaitingKickoff",
+			"awaitingAfterSafety",
+			"awaitingAfterTouchdown",
+			"overtimeState",
+			"playUntimedPossession",
+		] as const;
 
-		this.g.down = down;
-		this.g.toGo = toGo;
-		this.g.scrimmage = scrimmage;
-		this.g.o = o;
-		this.g.d = d;
-		this.g.isClockRunning = isClockRunning;
-		this.g.awaitingKickoff = awaitingKickoff;
-		this.g.awaitingAfterSafety = awaitingAfterSafety;
-		this.g.awaitingAfterTouchdown = awaitingAfterTouchdown;
-		this.g.overtimeState = overtimeState;
+		for (const key of keysToApply) {
+			(this as any).g[key] = this.state.current[key];
+		}
 	}
 }
 

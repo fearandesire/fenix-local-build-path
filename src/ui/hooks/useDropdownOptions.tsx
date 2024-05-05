@@ -1,4 +1,3 @@
-import orderBy from "lodash-es/orderBy";
 import {
 	PHASE,
 	TEAM_STATS_TABLES,
@@ -9,6 +8,7 @@ import {
 } from "../../common";
 import { useLocalPartial } from "../util";
 import type { LocalStateUI } from "../../common/types";
+import { orderBy } from "../../common/utils";
 
 export type ResponsiveOption = {
 	minWidth: number;
@@ -41,7 +41,7 @@ export const getSortedTeams = ({
 	const array = [
 		...orderBy(
 			teamInfoCache.filter(t => !t.disabled),
-			["region", "name", "tid"],
+			["region", "name"],
 		),
 	];
 
@@ -49,7 +49,7 @@ export const getSortedTeams = ({
 		array.push(
 			...orderBy(
 				teamInfoCache.filter(t => t.disabled),
-				["region", "name", "tid"],
+				["region", "name"],
 			),
 		);
 	}
@@ -161,7 +161,7 @@ const dropdownValues: Record<string, string | ResponsiveOption[]> = {
 	either: "Either",
 	skater: "Skaters",
 	goalie: "Goalies",
-	"all|||playoffsAll": makeNormalResponsive("All", "All Games"),
+	combined: "Combined",
 	current: "Current",
 	overview: "Overview",
 	gameLog: "Game Log",
@@ -302,8 +302,8 @@ const useDropdownOptions = (
 		}
 	} else if (field === "playoffs") {
 		keys = ["regularSeason", "playoffs"];
-	} else if (field === "playoffsAll") {
-		keys = ["all|||playoffsAll", "regularSeason", "playoffs"];
+	} else if (field === "playoffsCombined") {
+		keys = ["regularSeason", "playoffs", "combined"];
 	} else if (field === "shows") {
 		keys = ["10", "all|||seasons"];
 	} else if (field === "statTypes" || field === "statTypesAdv") {

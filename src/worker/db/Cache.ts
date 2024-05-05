@@ -22,6 +22,7 @@ import type {
 	PlayoffSeries,
 	ReleasedPlayer,
 	ReleasedPlayerWithoutKey,
+	SavedTrade,
 	ScheduleGame,
 	ScheduleGameWithoutKey,
 	ScheduledEvent,
@@ -60,6 +61,7 @@ export type Store =
 	| "players"
 	| "playoffSeries"
 	| "releasedPlayers"
+	| "savedTrades"
 	| "schedule"
 	| "scheduledEvents"
 	| "seasonLeaders"
@@ -94,6 +96,7 @@ export const STORES: Store[] = [
 	"players",
 	"playoffSeries",
 	"releasedPlayers",
+	"savedTrades",
 	"schedule",
 	"scheduledEvents",
 	"seasonLeaders",
@@ -129,7 +132,7 @@ const getIndexKey = (
 	);
 };
 
-class StoreAPI<Input, Output, ID> {
+class StoreAPI<Input, Output, ID extends string | number> {
 	cache: Cache;
 
 	store: Store;
@@ -174,7 +177,7 @@ class StoreAPI<Input, Output, ID> {
 		return this.cache._put(this.store, obj) as any;
 	}
 
-	delete(id: number): Promise<void> {
+	delete(id: ID): Promise<void> {
 		return this.cache._delete(this.store, id);
 	}
 
@@ -232,6 +235,9 @@ class Cache {
 				key: string[];
 				unique?: boolean;
 			}[];
+
+			// Should be true if we want to fetch data from getData on a new season, even with autoSave disabled. This happens if you use this._season in getData such that there are objects for future seasons left out of the cache.
+			getDataWithAutoSaveDisabled?: boolean;
 		}
 	>;
 
@@ -266,6 +272,8 @@ class Cache {
 	playoffSeries: StoreAPI<PlayoffSeries, PlayoffSeries, number>;
 
 	releasedPlayers: StoreAPI<ReleasedPlayerWithoutKey, ReleasedPlayer, number>;
+
+	savedTrades: StoreAPI<SavedTrade, SavedTrade, string>;
 
 	schedule: StoreAPI<ScheduleGameWithoutKey, ScheduleGame, number>;
 
@@ -430,6 +438,13 @@ class Cache {
 					},
 				],
 			},
+			savedTrades: {
+				pk: "hash",
+				pkType: "string",
+				autoIncrement: false,
+				getData: (tx: IDBPTransaction<LeagueDB>) =>
+					tx.objectStore("savedTrades").getAll(),
+			},
 			schedule: {
 				pk: "gid",
 				pkType: "number",
@@ -450,6 +465,7 @@ class Cache {
 						.index("season")
 						.getAll(this._season);
 				},
+				getDataWithAutoSaveDisabled: true,
 			},
 			seasonLeaders: {
 				pk: "season",
@@ -558,6 +574,7 @@ class Cache {
 		this.players = new StoreAPI(this, "players");
 		this.playoffSeries = new StoreAPI(this, "playoffSeries");
 		this.releasedPlayers = new StoreAPI(this, "releasedPlayers");
+		this.savedTrades = new StoreAPI(this, "savedTrades");
 		this.schedule = new StoreAPI(this, "schedule");
 		this.scheduledEvents = new StoreAPI(this, "scheduledEvents");
 		this.seasonLeaders = new StoreAPI(this, "seasonLeaders");
@@ -673,10 +690,17 @@ class Cache {
 		}
 	}
 
-	async _loadStore(store: Store, transaction: IDBPTransaction<LeagueDB>) {
+	// append is for autoSave false in rare situations
+	async _loadStore(
+		store: Store,
+		transaction: IDBPTransaction<LeagueDB>,
+		append?: boolean,
+	) {
 		const storeInfo = this.storeInfos[store];
-		this._deletes[store] = new Set();
-		this._dirtyRecords[store] = new Set();
+		if (!append) {
+			this._deletes[store] = new Set();
+			this._dirtyRecords[store] = new Set();
+		}
 
 		// Load data and do maxIds calculation in parallel
 		await Promise.all([
@@ -685,7 +709,9 @@ class Cache {
 				const data = storeInfo.getData
 					? await storeInfo.getData(transaction)
 					: [];
-				this._data[store] = {};
+				if (!append) {
+					this._data[store] = {};
+				}
 
 				for (const row of data) {
 					const key = row[storeInfo.pk];
@@ -712,18 +738,11 @@ class Cache {
 
 	// Load database from disk and save in cache, wiping out any prior values in cache
 	async fill(season?: number) {
-		if (!local.autoSave) {
-			return;
-		}
-
 		//console.log('fill start');
 		//performance.mark('fillStart');
 		this._validateStatus("empty", "full");
 
 		this._setStatus("filling");
-
-		// @ts-expect-error
-		this._data = {};
 
 		// This is crap and should be fixed ASAP
 		this._season = season;
@@ -752,10 +771,22 @@ class Cache {
 			throw new Error("Undefined season");
 		}
 
-		for (const store of STORES) {
-			await this._loadStore(store, idb.league.transaction([store]));
+		if (local.autoSave) {
+			// @ts-expect-error
+			this._data = {};
 		}
-		this._dirty = false;
+
+		for (const store of STORES) {
+			if (local.autoSave) {
+				await this._loadStore(store, idb.league.transaction([store]));
+			} else if (this.storeInfos[store].getDataWithAutoSaveDisabled) {
+				await this._loadStore(store, idb.league.transaction([store]), true);
+			}
+		}
+
+		if (local.autoSave) {
+			this._dirty = false;
+		}
 
 		this._setStatus("full");
 		//performance.measure('fillTime', 'fillStart');
@@ -911,7 +942,7 @@ class Cache {
 			if (Array.isArray(min)) {
 				keyParsed = parseInfinity(keyString);
 			} else if (typeof min === "number") {
-				keyParsed = parseFloat(keyString);
+				keyParsed = helpers.localeParseFloat(keyString);
 
 				if (Number.isNaN(keyParsed)) {
 					throw new Error(

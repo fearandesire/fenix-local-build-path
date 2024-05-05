@@ -1,5 +1,3 @@
-import orderBy from "lodash-es/orderBy";
-import range from "lodash-es/range";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "react-bootstrap";
 import {
@@ -27,6 +25,7 @@ import {
 } from "../util";
 import { applyRealTeamInfos, MAX_SEASON, MIN_SEASON } from "./NewLeague";
 import SettingsForm from "./Settings/SettingsForm";
+import { orderBy, range } from "../../common/utils";
 
 export const getRandomSeason = (start: number, end: number) => {
 	return Math.floor(Math.random() * (1 + end - start)) + start;
@@ -47,6 +46,7 @@ export type ExhibitionTeam = {
 	Team,
 	| "abbrev"
 	| "imgURL"
+	| "imgURLSmall"
 	| "region"
 	| "name"
 	| "tid"
@@ -197,13 +197,13 @@ const SelectTeam = ({
 						type: "real",
 						season,
 						pidOffset,
-				  }
+					}
 				: {
 						type: "league",
 						lid: league.lid,
 						season,
 						pidOffset,
-				  },
+					},
 		);
 		const newTeams = orderBy(
 			applyRealTeamInfos(newInfo.teams, realTeamInfo, season),
@@ -332,7 +332,7 @@ const SelectTeam = ({
 									<option key={i} value={i}>
 										{i}
 									</option>
-							  ))
+								))
 							: null}
 					</select>
 					<select
@@ -348,7 +348,7 @@ const SelectTeam = ({
 					>
 						{teams.map(t => (
 							<option key={t.tid} value={t.tid}>
-								{t.region} {t.name}
+								{t.region} {t.name} ({t.ovr} ovr)
 							</option>
 						))}
 						{teams.length === 0 ? (
@@ -492,12 +492,24 @@ const useLeagues = () => {
 const Exhibition = ({ defaultSettings, realTeamInfo }: View<"exhibition">) => {
 	// Default state comes from cache of last exhibition game, if possible
 	const defaultState = useMemo(() => {
+		let settings: CachedSettings | undefined;
 		try {
 			const json = safeLocalStorage.getItem(CACHE_KEY);
 			if (json) {
-				return JSON.parse(json) as CachedSettings;
+				settings = JSON.parse(json) as CachedSettings;
 			}
 		} catch (error) {}
+
+		if (settings) {
+			// Add default, in case there is a new setting
+			if (settings.gameAttributesInfo.type === "custom") {
+				settings.gameAttributesInfo.custom = {
+					...defaultSettings,
+					...settings.gameAttributesInfo.custom,
+				};
+			}
+			return settings;
+		}
 
 		return {
 			gameAttributesInfo: {
@@ -508,6 +520,7 @@ const Exhibition = ({ defaultSettings, realTeamInfo }: View<"exhibition">) => {
 			swapHomeAway: false,
 			teams: undefined,
 		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	const leagues = useLeagues();

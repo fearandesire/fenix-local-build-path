@@ -8,7 +8,7 @@ import type {
 	PlayerInjury,
 	DraftPick,
 } from "../../../common/types";
-import { groupBy } from "../../../common/groupBy";
+import { groupBy } from "../../../common/utils";
 import { getNumPicksPerRound } from "../trade/getPickValues";
 
 type Asset =
@@ -461,9 +461,9 @@ const sumValues = (
 			}
 		}
 
-		// Really bad players will just get no PT
+		// Really bad players will just get no PT, but don't to count them as 0 because then AI thinks it can't find a trade
 		if (playerValue < 0) {
-			playerValue = 0;
+			playerValue /= 20;
 		}
 
 		const contractsFactor = strategy === "rebuilding" ? 2 : 0.5;
@@ -650,7 +650,7 @@ const getModifiedPickRank = async (
 		"teamSeasonsBySeasonTid",
 		[g.get("season"), tid],
 	);
-	const gp = teamSeason?.gp ?? 0;
+	const gp = teamSeason ? helpers.getTeamSeasonGp(teamSeason) : 0;
 	const seasonFraction = gp / g.get("numGames");
 
 	const players = await idb.cache.players.indexGetAll("playersByTid", tid);

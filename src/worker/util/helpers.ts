@@ -8,6 +8,7 @@ import { idb } from "../db";
 import g from "./g";
 import type { DraftPick, PlayoffSeriesTeam } from "../../common/types";
 import defaultGameAttributes from "../../common/defaultGameAttributes";
+import hasTies from "../core/season/hasTies";
 
 const augmentSeries = async (
 	series: {
@@ -23,6 +24,8 @@ const augmentSeries = async (
 		"noCopyCache",
 	);
 
+	const ties = hasTies(season);
+
 	const setAll = (obj: PlayoffSeriesTeam) => {
 		obj.abbrev = g.get("teamInfoCache")[obj.tid]?.abbrev;
 		obj.region = g.get("teamInfoCache")[obj.tid]?.region;
@@ -30,7 +33,7 @@ const augmentSeries = async (
 		obj.regularSeason = {
 			won: 0,
 			lost: 0,
-			tied: g.get("ties", season) ? 0 : undefined,
+			tied: ties ? 0 : undefined,
 			otl: g.get("otl", season) ? 0 : undefined,
 		};
 
@@ -50,7 +53,7 @@ const augmentSeries = async (
 			obj.regularSeason.won = teamSeason.won;
 			obj.regularSeason.lost = teamSeason.lost;
 
-			if (g.get("ties", season)) {
+			if (ties) {
 				obj.regularSeason.tied = teamSeason.tied;
 			}
 			if (g.get("otl", season)) {
@@ -105,25 +108,11 @@ const correctLinkLid = (lid: number, text: string) => {
 	return text.replace(/\/l\/\d+\//g, `/l/${lid}/`);
 };
 
-const defaultBudgetAmount = (
-	popRank: number = g.get("numActiveTeams"),
-	salaryCap: number = g.get("salaryCap"),
-) => {
-	return (
-		Math.round(
-			20 +
-				(salaryCap / 90000) * 1330 +
-				(900 * (salaryCap / 90000) * (g.get("numActiveTeams") - popRank)) /
-					(g.get("numActiveTeams") - 1),
-		) * 10
-	);
-};
-
 const defaultTicketPrice = (
 	popRank: number = g.get("numActiveTeams"),
 	salaryCap: number = g.get("salaryCap"),
 ) => {
-	return parseFloat(
+	return helpers.localeParseFloat(
 		(
 			1 +
 			(salaryCap / 90000) * 36 +
@@ -234,8 +223,8 @@ const pickDesc = async (dp: DraftPick, short?: "short") => {
 		dp.season === "fantasy"
 			? "Fantasy draft"
 			: dp.season === "expansion"
-			? "Expansion draft"
-			: dp.season;
+			  ? "Expansion draft"
+			  : dp.season;
 
 	const extras: string[] = [];
 
@@ -268,13 +257,14 @@ const pickDesc = async (dp: DraftPick, short?: "short") => {
 			"teamSeasonsByTidSeason",
 			[dp.originalTid, currentSeason],
 		);
-		if (!teamSeason || teamSeason.gp === 0) {
+		const gp = teamSeason ? helpers.getTeamSeasonGp(teamSeason) : 0;
+		if (gp === 0) {
 			teamSeason = await idb.cache.teamSeasons.indexGet(
 				"teamSeasonsByTidSeason",
 				[dp.originalTid, currentSeason - 1],
 			);
 		}
-		if (teamSeason && teamSeason.gp > 0) {
+		if (teamSeason && helpers.getTeamSeasonGp(teamSeason) > 0) {
 			const record = commonHelpers.formatRecord(teamSeason);
 			extras.push(record);
 		}
@@ -341,11 +331,20 @@ const daysLeft = (freeAgents: boolean, days?: number) => {
 
 	let dayWeek;
 	if (freeAgents) {
-		dayWeek = `day${actualDays === 1 ? "" : "s"}`;
+		dayWeek = helpers.plural("day", actualDays);
 	} else {
 		dayWeek = timeBetweenGames(actualDays);
 	}
 	return `${actualDays} ${dayWeek} left`;
+};
+
+const getTeamSeasonGp = (teamSeason: {
+	won: number;
+	lost: number;
+	tied: number;
+	otl: number;
+}) => {
+	return teamSeason.won + teamSeason.lost + teamSeason.tied + teamSeason.otl;
 };
 
 const helpers = {
@@ -353,11 +352,11 @@ const helpers = {
 	augmentSeries,
 	calcWinp,
 	correctLinkLid,
-	defaultBudgetAmount,
 	defaultTicketPrice,
 	effectiveGameLength,
 	gb,
 	getAbbrev,
+	getTeamSeasonGp,
 	leagueUrl,
 	numGamesToWinSeries,
 	overtimeCounter,

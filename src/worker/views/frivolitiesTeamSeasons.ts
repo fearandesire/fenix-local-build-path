@@ -2,30 +2,72 @@ import { idb, iterate } from "../db";
 import { g, helpers } from "../util";
 import type { UpdateEvents, ViewInput, TeamSeason } from "../../common/types";
 import { isSport, PHASE } from "../../common";
-import orderBy from "lodash-es/orderBy";
 import { team } from "../core";
+import hasTies from "../core/season/hasTies";
+import { orderBy, type OrderBySortParams } from "../../common/utils";
+import getPlayoffsByConf from "../core/season/getPlayoffsByConf";
 
 type Most = {
 	value: number;
 	extra?: Record<string, unknown>;
 };
 
-export const getMostXTeamSeasons = async ({
+// This assumes we add a value for defaultKey before we get any key that might not exist
+class DefaultKeyMap<Key, Value> extends Map<Key, Value> {
+	defaultKey: Key;
+
+	constructor(defaultKey: Key) {
+		super();
+
+		this.defaultKey = defaultKey;
+	}
+
+	override get(key: Key) {
+		if (!this.has(key)) {
+			if (!this.has(this.defaultKey)) {
+				throw new Error("No entry for defaultKey");
+			}
+			return super.get(this.defaultKey)!;
+		}
+
+		return super.get(key)!;
+	}
+}
+
+export const getPlayoffsByConfBySeason = async () => {
+	const currentSeason = g.get("season");
+	const playoffsByConfBySeason = new DefaultKeyMap<number, boolean>(
+		currentSeason,
+	);
+	for (
+		let season = g.get("startingSeason");
+		season <= currentSeason;
+		season++
+	) {
+		playoffsByConfBySeason.set(season, await getPlayoffsByConf(season));
+	}
+
+	return playoffsByConfBySeason;
+};
+
+const getMostXTeamSeasons = async ({
 	filter,
 	getValue,
 	after,
 	sortParams,
 }: {
 	filter?: (ts: TeamSeason) => boolean;
-	getValue: (ts: TeamSeason) => Most | undefined;
+	getValue: (ts: TeamSeason, playoffsByConf: boolean) => Most | undefined;
 	after?: (most: Most) => Promise<Most> | Most;
-	sortParams?: any;
+	sortParams: OrderBySortParams;
 }) => {
 	const LIMIT = 100;
 	const teamSeasonsAll: (TeamSeason & {
 		winp: number;
 		most: Most;
 	})[] = [];
+
+	const playoffsByConfBySeason = await getPlayoffsByConfBySeason();
 
 	await iterate(
 		idb.league.transaction("teamSeasons").store,
@@ -36,7 +78,9 @@ export const getMostXTeamSeasons = async ({
 				return;
 			}
 
-			const most = getValue(ts);
+			const playoffsByConf = playoffsByConfBySeason.get(ts.season);
+
+			const most = getValue(ts, playoffsByConf);
 			if (most === undefined) {
 				return;
 			}
@@ -134,11 +178,14 @@ export const getMostXTeamSeasons = async ({
 	return ordered;
 };
 
-export const getRoundsWonText = (ts: TeamSeason) => {
+export const getRoundsWonText = (ts: TeamSeason, playoffsByConf: boolean) => {
 	const numPlayoffRounds = g.get("numGamesPlayoffSeries", ts.season).length;
-	const numConfs = g.get("confs", ts.season).length;
 
-	return helpers.roundsWonText(ts.playoffRoundsWon, numPlayoffRounds, numConfs);
+	return helpers.roundsWonText(
+		ts.playoffRoundsWon,
+		numPlayoffRounds,
+		playoffsByConf,
+	);
 };
 
 const updateFrivolitiesTeamSeasons = async (
@@ -166,6 +213,8 @@ const updateFrivolitiesTeamSeasons = async (
 		const pointsFormula = g.get("pointsFormula");
 		const usePts = pointsFormula !== "";
 
+		const mostValue = (x: any) => x.most.value;
+
 		if (type === "best_non_playoff") {
 			title = "Best Non-Playoff Teams";
 			description =
@@ -178,7 +227,7 @@ const updateFrivolitiesTeamSeasons = async (
 				return { value: helpers.calcWinp(ts) };
 			};
 			sortParams = [
-				["most.value", "mov"],
+				[mostValue, "mov"],
 				["desc", "desc"],
 			];
 		} else if (type === "worst_playoff") {
@@ -200,12 +249,12 @@ const updateFrivolitiesTeamSeasons = async (
 			filter = ts =>
 				ts.playoffRoundsWon >= 0 &&
 				(season > ts.season || phase > PHASE.PLAYOFFS);
-			getValue = ts => ({
+			getValue = (ts, playoffsByConf) => ({
 				value: -helpers.calcWinp(ts),
-				roundsWonText: getRoundsWonText(ts),
+				roundsWonText: getRoundsWonText(ts, playoffsByConf),
 			});
 			sortParams = [
-				["most.value", "mov"],
+				[mostValue, "mov"],
 				["desc", "asc"],
 			];
 		} else if (type === "worst_finals") {
@@ -227,11 +276,10 @@ const updateFrivolitiesTeamSeasons = async (
 			filter = ts =>
 				ts.playoffRoundsWon >= 0 &&
 				(season > ts.season || phase > PHASE.PLAYOFFS);
-			getValue = ts => {
-				const roundsWonText = getRoundsWonText(ts);
+			getValue = (ts, playoffsByConf) => {
+				const roundsWonText = getRoundsWonText(ts, playoffsByConf);
 
-				// Keep in sync with helpers.roundsWonText
-				const validTexts = [
+				const validTexts: (typeof roundsWonText)[] = [
 					"League champs",
 					"Conference champs",
 					"Made finals",
@@ -245,7 +293,7 @@ const updateFrivolitiesTeamSeasons = async (
 				};
 			};
 			sortParams = [
-				["most.value", "mov"],
+				[mostValue, "mov"],
 				["desc", "asc"],
 			];
 		} else if (type === "worst_champ") {
@@ -267,11 +315,10 @@ const updateFrivolitiesTeamSeasons = async (
 			filter = ts =>
 				ts.playoffRoundsWon >= 0 &&
 				(season > ts.season || phase > PHASE.PLAYOFFS);
-			getValue = ts => {
-				const roundsWonText = getRoundsWonText(ts);
+			getValue = (ts, playoffsByConf) => {
+				const roundsWonText = getRoundsWonText(ts, playoffsByConf);
 
-				// Keep in sync with helpers.roundsWonText
-				const validTexts = ["League champs"];
+				const validTexts: (typeof roundsWonText)[] = ["League champs"];
 				if (!validTexts.includes(roundsWonText)) {
 					return;
 				}
@@ -281,7 +328,7 @@ const updateFrivolitiesTeamSeasons = async (
 				};
 			};
 			sortParams = [
-				["most.value", "mov"],
+				[mostValue, "mov"],
 				["desc", "asc"],
 			];
 		} else if (type === "best") {
@@ -299,12 +346,12 @@ const updateFrivolitiesTeamSeasons = async (
 			);
 
 			filter = ts => season > ts.season || phase > PHASE.PLAYOFFS;
-			getValue = ts => ({
+			getValue = (ts, playoffsByConf) => ({
 				value: helpers.calcWinp(ts),
-				roundsWonText: getRoundsWonText(ts),
+				roundsWonText: getRoundsWonText(ts, playoffsByConf),
 			});
 			sortParams = [
-				["most.value", "mov"],
+				[mostValue, "mov"],
 				["desc", "desc"],
 			];
 		} else if (type === "worst") {
@@ -315,7 +362,7 @@ const updateFrivolitiesTeamSeasons = async (
 				value: -helpers.calcWinp(ts),
 			});
 			sortParams = [
-				["most.value", "mov"],
+				[mostValue, "mov"],
 				["desc", "asc"],
 			];
 		} else if (type === "old_champ" || type === "young_champ") {
@@ -340,11 +387,10 @@ const updateFrivolitiesTeamSeasons = async (
 				ts.avgAge !== undefined &&
 				ts.playoffRoundsWon >= 0 &&
 				(season > ts.season || phase > PHASE.PLAYOFFS);
-			getValue = ts => {
-				const roundsWonText = getRoundsWonText(ts);
+			getValue = (ts, playoffsByConf) => {
+				const roundsWonText = getRoundsWonText(ts, playoffsByConf);
 
-				// Keep in sync with helpers.roundsWonText
-				const validTexts = ["League champs"];
+				const validTexts: (typeof roundsWonText)[] = ["League champs"];
 				if (!validTexts.includes(roundsWonText)) {
 					return;
 				}
@@ -357,7 +403,7 @@ const updateFrivolitiesTeamSeasons = async (
 				};
 			};
 			sortParams = [
-				["most.value", "winp"],
+				[mostValue, "winp"],
 				["desc", "desc"],
 			];
 		} else {
@@ -375,7 +421,7 @@ const updateFrivolitiesTeamSeasons = async (
 			description,
 			extraCols,
 			teamSeasons,
-			ties: g.get("ties"),
+			ties: hasTies(Infinity),
 			otl: g.get("otl"),
 			title,
 			type,

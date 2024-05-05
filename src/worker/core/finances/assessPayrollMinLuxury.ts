@@ -1,6 +1,8 @@
 import { team } from "..";
 import { idb } from "../../db";
 import { g, helpers, logEvent } from "../../util";
+import getLuxuryTaxAmount from "./getLuxuryTaxAmount";
+import getMinPayrollAmount from "./getMinPayrollAmount";
 
 const rosterLink = (tid: number) =>
 	`<a href="${helpers.leagueUrl([
@@ -34,17 +36,19 @@ const assessPayrollMinLuxury = async () => {
 		// Store payroll
 		teamSeason.payrollEndOfSeason = payroll;
 
-		// Assess minimum payroll tax and luxury tax
-		if (payroll < g.get("minPayroll")) {
-			teamSeason.expenses.minTax.amount = g.get("minPayroll") - payroll;
-			teamSeason.cash -= teamSeason.expenses.minTax.amount;
+		const luxuryTaxAmount = getLuxuryTaxAmount(payroll);
+		const minPayrollAmount = getMinPayrollAmount(payroll);
+
+		if (minPayrollAmount > 0) {
+			teamSeason.expenses.minTax = minPayrollAmount;
+			teamSeason.cash -= minPayrollAmount;
 
 			logEvent({
 				type: "minPayroll",
 				text: `The ${rosterLink(
 					tid,
 				)} paid a minimum payroll penalty of ${helpers.formatCurrency(
-					teamSeason.expenses.minTax.amount / 1000,
+					minPayrollAmount / 1000,
 					"M",
 				)} for having a payroll under ${helpers.formatCurrency(
 					g.get("minPayroll") / 1000,
@@ -54,22 +58,19 @@ const assessPayrollMinLuxury = async () => {
 				showNotification: tid === g.get("userTid"),
 				score: 10,
 			});
-		} else if (
-			payroll > g.get("luxuryPayroll") &&
-			g.get("salaryCapType") !== "hard"
-		) {
-			// Only apply luxury tax if hard cap is disabled!
-			const amount = g.get("luxuryTax") * (payroll - g.get("luxuryPayroll"));
-			collectedTax += amount;
-			teamSeason.expenses.luxuryTax.amount = amount;
-			teamSeason.cash -= teamSeason.expenses.luxuryTax.amount;
+		}
+
+		if (luxuryTaxAmount > 0) {
+			collectedTax += luxuryTaxAmount;
+			teamSeason.expenses.luxuryTax = luxuryTaxAmount;
+			teamSeason.cash -= teamSeason.expenses.luxuryTax;
 
 			logEvent({
 				type: "luxuryTax",
 				text: `The ${rosterLink(
 					tid,
 				)} paid a luxury tax of ${helpers.formatCurrency(
-					amount / 1000,
+					luxuryTaxAmount / 1000,
 					"M",
 				)} for having a payroll above ${helpers.formatCurrency(
 					g.get("luxuryPayroll") / 1000,
@@ -87,7 +88,6 @@ const assessPayrollMinLuxury = async () => {
 			? g.get("luxuryPayroll")
 			: g.get("salaryCap");
 
-	const defaultRank = (g.get("numActiveTeams") + 1) / 2;
 	const payteams = Object.values(payrolls).filter(
 		x => x !== undefined && x <= payrollCutoff,
 	);
@@ -103,10 +103,7 @@ const assessPayrollMinLuxury = async () => {
 			}
 
 			if (payroll <= payrollCutoff) {
-				teamSeason.revenues.luxuryTaxShare = {
-					amount: distribute,
-					rank: defaultRank,
-				};
+				teamSeason.revenues.luxuryTaxShare = distribute;
 				teamSeason.cash += distribute;
 
 				logEvent({
@@ -125,10 +122,7 @@ const assessPayrollMinLuxury = async () => {
 					score: 10,
 				});
 			} else {
-				teamSeason.revenues.luxuryTaxShare = {
-					amount: 0,
-					rank: defaultRank,
-				};
+				teamSeason.revenues.luxuryTaxShare = 0;
 			}
 		}
 	}

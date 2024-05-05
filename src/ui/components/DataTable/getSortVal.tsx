@@ -50,7 +50,7 @@ const getSortVal = (
 			}
 
 			if (typeof sortVal !== "number") {
-				return parseFloat(sortVal);
+				return helpers.localeParseFloat(sortVal);
 			}
 
 			return val;
@@ -71,7 +71,13 @@ const getSortVal = (
 
 			const [round, pick] = sortVal.split("-"); // This assumes no league has more than a million teams lol
 
-			return parseInt(round) * 1000000 + parseInt(pick);
+			const number = parseInt(round) * 1000000 + parseInt(pick);
+
+			// Handle any weird values, like "none" or "undrafted" or whatever. Such as on "Best Player at Every Pick"
+			if (Number.isNaN(number)) {
+				return Infinity;
+			}
+			return number;
 		}
 
 		if (sortType === "currency") {
@@ -96,7 +102,7 @@ const getSortVal = (
 			}
 
 			// Drop $ and parseFloat will just keep the numeric part at the beginning of the string
-			const parsedNumber = parseFloat(sortVal.replace("$", ""));
+			const parsedNumber = helpers.localeParseFloat(sortVal.replace("$", ""));
 
 			if (!exportCSV) {
 				// This gets called by filter functions, which expect it to be in millions

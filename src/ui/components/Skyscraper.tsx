@@ -1,43 +1,11 @@
-import { memo, useEffect } from "react"; // Ensure there is enough room to display 160px wide ad with 15px margins next to 1200px wide container
+import { memo, useEffect } from "react";
 import { AD_DIVS } from "../../common";
+import { ads } from "../util";
 
-const widthCutoff = 1200 + 190;
-
-let displayed = false;
-export const updateSkyscraperDisplay = () => {
-	const div = document.getElementById(AD_DIVS.rail);
-
-	if (div) {
-		const gold = !!div.dataset.gold;
-
-		if (document.documentElement.clientWidth >= widthCutoff && !gold) {
-			if (!displayed) {
-				window.freestar.queue.push(() => {
-					div.style.display = "block";
-					window.freestar.newAdSlots([
-						{
-							placementName: AD_DIVS.rail,
-							slotId: AD_DIVS.rail,
-						},
-					]);
-					displayed = true;
-				});
-			}
-		} else {
-			if (displayed || gold) {
-				window.freestar.queue.push(() => {
-					div.style.display = "none";
-					window.freestar.deleteAdSlots(AD_DIVS.rail);
-					displayed = false;
-				});
-			}
-		}
-	}
-};
+// Ensure there is enough room to display 160px wide ad with 15px margins next to 1200px wide container
 
 // https://developer.mozilla.org/en-US/docs/Web/Events/resize
 let running = false;
-
 const resizeListener = () => {
 	if (running) {
 		return;
@@ -53,12 +21,16 @@ const resizeListener = () => {
 const Skyscraper = memo(() => {
 	useEffect(() => {
 		if (!window.mobile) {
-			updateSkyscraperDisplay();
+			const callback = () => {
+				ads.skyscraper.updateDislay(false);
+			};
+
+			callback();
 			window.addEventListener("resize", resizeListener);
-			window.addEventListener("optimizedResize", updateSkyscraperDisplay);
+			window.addEventListener("optimizedResize", callback);
 			return () => {
 				window.removeEventListener("resize", resizeListener);
-				window.removeEventListener("optimizedResize", updateSkyscraperDisplay);
+				window.removeEventListener("optimizedResize", callback);
 			};
 		}
 	}, []);

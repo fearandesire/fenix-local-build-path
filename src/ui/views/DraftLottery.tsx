@@ -1,5 +1,4 @@
 import classNames from "classnames";
-import range from "lodash-es/range";
 import { useEffect, useReducer, useRef } from "react";
 import {
 	DraftAbbrev,
@@ -20,6 +19,7 @@ import {
 	getDraftLotteryProbs,
 } from "../../common/draftLottery";
 import useStickyXX from "../components/DataTable/useStickyXX";
+import { range } from "../../common/utils";
 
 type Props = View<"draftLottery">;
 type State = {
@@ -35,7 +35,7 @@ type State = {
 type Action =
 	| {
 			type: "init";
-			props: Props;
+			props: Pick<Props, "result" | "season" | "draftType">;
 	  }
 	| {
 			type: "startClicked";
@@ -108,6 +108,7 @@ const reducer = (state: State, action: Action): State => {
 const Row = ({
 	NUM_PICKS,
 	i,
+	pickAlreadyMade,
 	season,
 	t,
 	userTid,
@@ -118,6 +119,7 @@ const Row = ({
 }: {
 	NUM_PICKS: number;
 	i: number;
+	pickAlreadyMade: boolean;
 	season: number;
 	t: DraftLotteryResultArray[number];
 	userTid: number;
@@ -192,7 +194,7 @@ const Row = ({
 				{revealedPickNumber}
 			</td>
 			<td className={spectator ? "p-0" : undefined}>
-				{userTeam || spectator ? null : (
+				{userTeam || spectator || pickAlreadyMade ? null : (
 					<button
 						className="btn btn-xs btn-light-bordered"
 						onClick={async () => {
@@ -293,6 +295,7 @@ const Rigged = ({
 };
 
 const DraftLotteryTable = (props: Props) => {
+	console.log("render table", props.result);
 	const isMounted = useRef(true);
 	useEffect(() => {
 		return () => {
@@ -315,10 +318,15 @@ const DraftLotteryTable = (props: Props) => {
 		season: props.season,
 	});
 
-	if (props.season !== state.season) {
+	// Handle changing season, and updating state.result due to game sim
+	if (
+		props.season !== state.season ||
+		props.draftType !== state.draftType ||
+		(revealState.current === "init" && props.result !== state.result)
+	) {
 		numLeftToReveal.current = 0;
 		revealState.current = "init";
-		dispatch({ type: "init", props: props });
+		dispatch({ type: "init", props });
 	}
 
 	const revealPickAuto = () => {
@@ -386,7 +394,15 @@ const DraftLotteryTable = (props: Props) => {
 		dispatch({ type: "revealOne" });
 	};
 
-	const { godMode, numToPick, rigged, season, type, userTid } = props;
+	const {
+		dpidsAvailableToTrade,
+		godMode,
+		numToPick,
+		rigged,
+		season,
+		type,
+		userTid,
+	} = props;
 	const { draftType, result } = state;
 	const { tooSlow, probs } = getDraftLotteryProbs(result, draftType, numToPick);
 	const NUM_PICKS = result !== undefined ? result.length : 14;
@@ -426,15 +442,6 @@ const DraftLotteryTable = (props: Props) => {
 		table = (
 			<>
 				<p />
-				{tooSlow ? (
-					<div className="alert alert-warning d-inline-block">
-						<p>
-							<b>Warning:</b> Computing exact odds for so many teams and picks
-							is too slow, so estimates are shown. The lottery will still run
-							correctly though.
-						</p>
-					</div>
-				) : null}
 				<ResponsiveTableWrapper nonfluid>
 					<table
 						className={classNames(
@@ -479,6 +486,7 @@ const DraftLotteryTable = (props: Props) => {
 									key={i}
 									NUM_PICKS={NUM_PICKS}
 									i={i}
+									pickAlreadyMade={!dpidsAvailableToTrade.has(t.dpid)}
 									season={season}
 									t={t}
 									userTid={userTid}
@@ -491,6 +499,13 @@ const DraftLotteryTable = (props: Props) => {
 						</tbody>
 					</table>
 				</ResponsiveTableWrapper>
+				{tooSlow ? (
+					<p className="text-warning">
+						<b>Warning:</b> Computing exact odds for so many teams and picks is
+						too slow, so estimates are shown. The lottery will still run
+						correctly though.
+					</p>
+				) : null}
 			</>
 		);
 	} else {

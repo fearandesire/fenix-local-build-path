@@ -1,9 +1,9 @@
-import orderBy from "lodash-es/orderBy";
 import { idb } from "../../db";
 import { g, logEvent } from "../../util";
 import { getTeamOvr } from "../../views/newTeam";
 import player from "../player";
 import { PHASE } from "../../../common";
+import { orderBy } from "../../../common/utils";
 
 // Swap the user's roster with the roster of the worst team in the league, by ovr
 const swapWorstRoster = async (addSisyphusLogs: boolean) => {
@@ -60,9 +60,11 @@ const swapWorstRoster = async (addSisyphusLogs: boolean) => {
 			// Remove obsolete stats row if necessary
 			const lastStats = p.stats.at(-1);
 			if (
+				lastStats &&
 				lastStats.tid === oldTid &&
 				lastStats.gp === 0 &&
-				lastStats.season === season
+				lastStats.season === season &&
+				phase <= PHASE.PLAYOFFS
 			) {
 				p.stats.pop();
 				p.statsTids = Array.from(new Set(p.stats.map(row => row.tid)));

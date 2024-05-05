@@ -1,5 +1,5 @@
 import { bySport, isSport, PHASE } from "../../../common";
-import { team } from "..";
+import { season, team } from "..";
 import { idb } from "../../db";
 import { g, helpers } from "../../util";
 import type { GameResults } from "../../../common/types";
@@ -9,6 +9,8 @@ import {
 	getAutoTicketPrice,
 	getBaseAttendance,
 } from "./attendance";
+import { levelToAmount } from "../../../common/budgetLevels";
+import getWinner from "../../../common/getWinner";
 
 const writeTeamStats = async (results: GameResults) => {
 	const allStarGame = results.team[0].id === -1 && results.team[1].id === -2;
@@ -21,19 +23,24 @@ const writeTeamStats = async (results: GameResults) => {
 	let attendance = 0;
 	let adjustedTicketPrice = 0;
 
-	for (const t1 of [0, 1]) {
+	const ties = season.hasTies("current");
+
+	const winner = getWinner([results.team[0].stat, results.team[1].stat]);
+
+	for (const t1 of [0, 1] as const) {
 		const t2 = t1 === 1 ? 0 : 1;
 		const payroll = await team.getPayroll(results.team[t1].id);
-		const [t, teamSeasons] = await Promise.all([
-			idb.cache.teams.get(results.team[t1].id),
-			idb.cache.teamSeasons.indexGetAll("teamSeasonsByTidSeason", [
+		const t = await idb.cache.teams.get(results.team[t1].id);
+		const teamSeasons = await idb.cache.teamSeasons.indexGetAll(
+			"teamSeasonsByTidSeason",
+			[
 				[results.team[t1].id, g.get("season") - 2],
 				[results.team[t1].id, g.get("season")],
-			]),
-		]);
+			],
+		);
 		const teamSeason = teamSeasons.at(-1)!;
-		const won = results.team[t1].stat.pts > results.team[t2].stat.pts;
-		const lost = results.team[t1].stat.pts < results.team[t2].stat.pts;
+		const won = winner === t1;
+		const lost = winner === t2;
 
 		const playoffs = g.get("phase") === PHASE.PLAYOFFS;
 		let teamStats = await idb.cache.teamStats.indexGet(
@@ -59,19 +66,18 @@ const writeTeamStats = async (results: GameResults) => {
 			});
 
 			if (t.autoTicketPrice !== false || !g.get("userTids").includes(t.tid)) {
-				const ticketPrice = getAutoTicketPrice({
+				const ticketPrice = await getAutoTicketPrice({
 					hype: teamSeason.hype,
 					pop: teamSeason.pop,
 					stadiumCapacity: teamSeason.stadiumCapacity,
 					teamSeasons,
+					tid: teamSeason.tid,
 				});
-				if (ticketPrice !== t.budget.ticketPrice.amount) {
-					t.budget.ticketPrice.amount = ticketPrice;
-				}
+				t.budget.ticketPrice = ticketPrice;
 			}
 
 			adjustedTicketPrice = getAdjustedTicketPrice(
-				t.budget.ticketPrice.amount,
+				t.budget.ticketPrice,
 				playoffs,
 			);
 		}
@@ -89,14 +95,19 @@ const writeTeamStats = async (results: GameResults) => {
 
 		if (g.get("phase") !== PHASE.PLAYOFFS) {
 			// All in [thousands of dollars]
+			const salaryCap = g.get("salaryCap");
 			salaryPaid = payroll / g.get("numGames");
-			scoutingPaid = t.budget.scouting.amount / g.get("numGames");
-			coachingPaid = t.budget.coaching.amount / g.get("numGames");
-			healthPaid = t.budget.health.amount / g.get("numGames");
-			facilitiesPaid = t.budget.facilities.amount / g.get("numGames");
+			scoutingPaid =
+				levelToAmount(t.budget.scouting, salaryCap) / g.get("numGames");
+			coachingPaid =
+				levelToAmount(t.budget.coaching, salaryCap) / g.get("numGames");
+			healthPaid =
+				levelToAmount(t.budget.health, salaryCap) / g.get("numGames");
+			facilitiesPaid =
+				levelToAmount(t.budget.facilities, salaryCap) / g.get("numGames");
 
 			const salaryCapFactor =
-				g.get("salaryCap") /
+				salaryCap /
 				bySport({
 					// defaultGameAttributes.salaryCap, but frozen in time because otherwise various coefficients below would need to be updated when it changes
 					baseball: 175000,
@@ -109,7 +120,7 @@ const writeTeamStats = async (results: GameResults) => {
 			let salaryCapFactor2;
 			if (isSport("hockey")) {
 				// Legacy, should probably adjust other params
-				salaryCapFactor2 = g.get("salaryCap") / 90000;
+				salaryCapFactor2 = salaryCap / 90000;
 			} else {
 				salaryCapFactor2 = salaryCapFactor;
 			}
@@ -163,11 +174,12 @@ const writeTeamStats = async (results: GameResults) => {
 
 		// Attendance: base on home team
 		if (t1 === 0) {
-			attendance = getActualAttendance({
+			attendance = await getActualAttendance({
 				baseAttendance,
 				randomize: true,
 				stadiumCapacity: teamSeason.stadiumCapacity,
 				teamSeasons,
+				tid: teamSeason.tid,
 				adjustedTicketPrice,
 			});
 		}
@@ -176,7 +188,8 @@ const writeTeamStats = async (results: GameResults) => {
 		let ticketRevenue = (adjustedTicketPrice * attendance) / 1000; // [thousands of dollars]
 
 		// Hype - relative to the expectations of prior seasons
-		if (teamSeason.gp > 5 && g.get("phase") !== PHASE.PLAYOFFS) {
+		const gp = helpers.getTeamSeasonGp(teamSeason);
+		if (gp > 5 && g.get("phase") !== PHASE.PLAYOFFS) {
 			let winp = helpers.calcWinp(teamSeason);
 			let winpOld = 0; // Avg winning percentage of last 0-2 seasons (as available)
 
@@ -263,25 +276,29 @@ const writeTeamStats = async (results: GameResults) => {
 			// Only home team gets attendance...
 			teamSeason.att += attendance; // This is only used for attendance tracking
 
-			if (teamSeason.gpHome === undefined) {
-				teamSeason.gpHome = Math.round(teamSeason.gp / 2);
-			}
-
 			// See also team.js and teamFinances.js
 			teamSeason.gpHome += 1;
 		}
 
-		teamSeason.gp += 1;
-		teamSeason.revenues.merch.amount += merchRevenue;
-		teamSeason.revenues.sponsor.amount += sponsorRevenue;
-		teamSeason.revenues.nationalTv.amount += nationalTvRevenue;
-		teamSeason.revenues.localTv.amount += localTvRevenue;
-		teamSeason.revenues.ticket.amount += ticketRevenue;
-		teamSeason.expenses.salary.amount += salaryPaid;
-		teamSeason.expenses.scouting.amount += scoutingPaid;
-		teamSeason.expenses.coaching.amount += coachingPaid;
-		teamSeason.expenses.health.amount += healthPaid;
-		teamSeason.expenses.facilities.amount += facilitiesPaid;
+		teamSeason.revenues.merch += merchRevenue;
+		teamSeason.revenues.sponsor += sponsorRevenue;
+		teamSeason.revenues.nationalTv += nationalTvRevenue;
+		teamSeason.revenues.localTv += localTvRevenue;
+		teamSeason.revenues.ticket += ticketRevenue;
+
+		// Non-zero expenses only in playoffs
+		if (g.get("phase") !== PHASE.PLAYOFFS) {
+			teamSeason.expenses.salary += salaryPaid;
+			teamSeason.expenses.scouting += scoutingPaid;
+			teamSeason.expenses.coaching += coachingPaid;
+			teamSeason.expenses.health += healthPaid;
+			teamSeason.expenses.facilities += facilitiesPaid;
+
+			teamSeason.expenseLevels.scouting += t.budget.scouting;
+			teamSeason.expenseLevels.coaching += t.budget.coaching;
+			teamSeason.expenseLevels.health += t.budget.health;
+			teamSeason.expenseLevels.facilities += t.budget.facilities;
+		}
 
 		// For historical reasons, "ba" is special in basketball (stored in box score, not in team stats)
 		const skip = bySport({
@@ -411,7 +428,7 @@ const writeTeamStats = async (results: GameResults) => {
 			} else {
 				teamSeason.streak = -1;
 			}
-		} else if (g.get("ties", "current") && g.get("phase") !== PHASE.PLAYOFFS) {
+		} else if (ties && g.get("phase") !== PHASE.PLAYOFFS) {
 			teamSeason.tied += 1;
 
 			if (results.team[0].did === results.team[1].did) {

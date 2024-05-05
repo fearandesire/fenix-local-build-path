@@ -5,7 +5,7 @@ import AddRemove from "./AddRemove";
 import type { View } from "../../../common/types";
 import { PHASE } from "../../../common";
 import TeamForm from "./TeamForm";
-import { groupBy } from "../../../common/groupBy";
+import { groupBy } from "../../../common/utils";
 
 const nextSeasonWarning =
 	"Because the regular season is already over, changes will not be fully applied until next season.";
@@ -163,6 +163,16 @@ const ManageTeams = (props: View<"manageTeams">) => {
 	};
 
 	useTitleBar({ title: "Manage Teams" });
+
+	if (props.autoRelocate) {
+		return (
+			<p>
+				You cannot edit teams while a{" "}
+				<a href={helpers.leagueUrl(["auto_relocate"])}>team relocation vote</a>{" "}
+				is pending.
+			</p>
+		);
+	}
 
 	const disableStatus =
 		!props.godMode ||

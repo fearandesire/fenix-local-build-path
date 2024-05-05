@@ -1,4 +1,3 @@
-import orderBy from "lodash-es/orderBy";
 import {
 	useState,
 	type FormEvent,
@@ -24,6 +23,7 @@ import RatingsForm from "./RatingsForm";
 import RelativesForm from "./RelativesForm";
 import type { View, Phase, PlayerWithoutKey } from "../../../common/types";
 import posRatings from "../../../common/posRatings";
+import { orderBy } from "../../../common/utils";
 
 // A player can never have KR or PR as his main position
 const bannedPositions = ["KR", "PR"];
@@ -84,7 +84,9 @@ const copyValidValues = (
 		}
 	}
 
-	let recomputePosOvrPot = false;
+	// Always recompute for a new player
+	let recomputePosOvrPot = target.pid === undefined;
+
 	{
 		// @ts-expect-error
 		const age = parseInt(source.age);
@@ -143,8 +145,9 @@ const copyValidValues = (
 
 	{
 		// Allow any value, even above or below normal limits, but round to $10k and convert from M to k
-		// @ts-expect-error
-		let amount = Math.round(100 * parseFloat(source.contract.amount)) * 10;
+		let amount =
+			// @ts-expect-error
+			Math.round(100 * helpers.localeParseFloat(source.contract.amount)) * 10;
 		if (Number.isNaN(amount)) {
 			amount = minContract;
 		}

@@ -1,7 +1,8 @@
-import { PHASE } from "../../../common";
 import { g, helpers, random } from "../../util";
 import { POSITIONS } from "../../../common/constants.football";
-import PlayByPlayLogger from "./PlayByPlayLogger";
+import PlayByPlayLogger, {
+	type PlayByPlayEventScore,
+} from "./PlayByPlayLogger";
 import getCompositeFactor from "./getCompositeFactor";
 import getPlayers from "./getPlayers";
 import formations from "./formations";
@@ -16,14 +17,19 @@ import type {
 	TeamNum,
 	Formation,
 } from "./types";
-import isFirstPeriodAfterHalftime from "./isFirstPeriodAfterHalftime";
-import possessionEndsAfterThisPeriod from "./possessionEndsAfterThisPeriod";
-import thisPeriodHasTwoMinuteWarning from "./thisPeriodHasTwoMinuteWarning";
 import getInjuryRate from "../GameSim.basketball/getInjuryRate";
-import Play from "./Play";
+import Play, {
+	SCRIMMAGE_EXTRA_POINT,
+	SCRIMMAGE_KICKOFF,
+	SCRIMMAGE_TWO_POINT_CONVERSION,
+} from "./Play";
 import LngTracker from "./LngTracker";
+import GameSimBase from "../GameSimBase";
+import { PHASE, STARTING_NUM_TIMEOUTS } from "../../../common";
 
 const teamNums: [TeamNum, TeamNum] = [0, 1];
+
+const FIELD_GOAL_DISTANCE_YARDS_ADDED_FROM_SCRIMMAGE = 17;
 
 /**
  * Convert energy into fatigue, which can be multiplied by a rating to get a fatigue-adjusted value.
@@ -41,20 +47,12 @@ const fatigue = (energy: number): number => {
 	return energy;
 };
 
-class GameSim {
-	id: number;
-
-	day: number | undefined;
-
+class GameSim extends GameSimBase {
 	team: [TeamGameSim, TeamGameSim];
 
 	playersOnField: [PlayersOnField, PlayersOnField];
 
 	subsEveryN: number;
-
-	overtime: boolean;
-
-	overtimes: number;
 
 	/**
 	 * "initialKickoff" -> (right after kickoff) "firstPossession" -> (after next call to possessionChange) -> "secondPossession" -> (after next call to possessionChange) -> "bothTeamPossessed" -> (based on conditions below) "over"
@@ -74,7 +72,7 @@ class GameSim {
 
 	numPeriods: number;
 
-	isClockRunning: boolean;
+	isClockRunning = false;
 
 	o: TeamNum;
 
@@ -82,26 +80,31 @@ class GameSim {
 
 	playByPlay: PlayByPlayLogger;
 
-	awaitingAfterTouchdown: boolean;
+	awaitingAfterTouchdown = false;
 
-	awaitingAfterSafety: boolean;
+	awaitingAfterSafety = false;
 
 	awaitingKickoff: TeamNum | undefined;
+	lastHalfAwaitingKickoff: TeamNum;
 
-	scrimmage: number;
+	scrimmage = SCRIMMAGE_KICKOFF;
 
-	down: number;
+	down = 1;
 
-	toGo: number;
+	toGo = 10;
 
-	timeouts: [number, number];
+	timeouts: [number, number] = [STARTING_NUM_TIMEOUTS!, STARTING_NUM_TIMEOUTS!];
 
-	twoMinuteWarningHappened: boolean;
+	twoMinuteWarningHappened = false;
 
 	currentPlay: Play;
 
 	lngTracker: LngTracker;
-	baseInjuryRate: number;
+
+	// For penalties at the end of a half
+	playUntimedPossession = false;
+
+	twoPointConversionTeam: TeamNum | undefined;
 
 	constructor({
 		gid,
@@ -120,11 +123,15 @@ class GameSim {
 		disableHomeCourtAdvantage?: boolean;
 		baseInjuryRate: number;
 	}) {
+		super({
+			gid,
+			day,
+			allStarGame: false,
+			baseInjuryRate,
+		});
+
 		this.playByPlay = new PlayByPlayLogger(doPlayByPlay);
-		this.id = gid;
-		this.day = day;
 		this.team = teams; // If a team plays twice in a day, this needs to be a deep copy
-		this.baseInjuryRate = baseInjuryRate;
 
 		this.playersOnField = [{}, {}];
 
@@ -137,20 +144,13 @@ class GameSim {
 		this.updatePlayersOnField("starters");
 		this.subsEveryN = 6; // How many possessions to wait before doing substitutions
 
-		this.overtime = false;
-		this.overtimes = 0;
 		this.clock = g.get("quarterLength"); // Game clock, in minutes
 		this.numPeriods = g.get("numPeriods");
 
-		this.isClockRunning = false;
-		this.awaitingAfterTouchdown = false;
-		this.awaitingAfterSafety = false;
 		this.awaitingKickoff = Math.random() < 0.5 ? 0 : 1;
-		this.down = 1;
-		this.toGo = 10;
-		this.scrimmage = 20;
-		this.timeouts = [3, 3];
-		this.twoMinuteWarningHappened = false;
+		this.d = this.awaitingKickoff;
+		this.o = this.awaitingKickoff === 0 ? 1 : 0;
+		this.lastHalfAwaitingKickoff = this.awaitingKickoff;
 		this.currentPlay = new Play(this);
 		this.lngTracker = new LngTracker();
 
@@ -187,20 +187,21 @@ class GameSim {
 		// Simulate the game up to the end of regulation
 		this.simRegulation();
 
-		while (this.team[0].stat.pts === this.team[1].stat.pts) {
-			// this.checkGameTyingShot();
+		let numOvertimes = 0;
+		while (
+			this.team[0].stat.pts === this.team[1].stat.pts &&
+			numOvertimes < this.maxOvertimes
+		) {
 			this.simOvertime();
-
-			// More than one overtime only if no ties are allowed or if it's the playoffs
-			if (g.get("phase") !== PHASE.PLAYOFFS && g.get("ties", "current")) {
-				break;
-			}
+			numOvertimes += 1;
 		}
 
-		this.playByPlay.logEvent("gameOver", {
+		this.doShootout();
+
+		this.playByPlay.logEvent({
+			type: "gameOver",
 			clock: this.clock,
 		});
-		// this.checkGameWinner();
 
 		// Delete stuff that isn't needed before returning
 		for (let t = 0; t < 2; t++) {
@@ -222,26 +223,24 @@ class GameSim {
 			}
 		}
 
-		const scoringSummaryAndRemove = this.playByPlay.playByPlay.filter(
-			event => event.scoringSummary || event.type === "removeLastScore",
-		);
-
-		const scoringSummary: any[] = [];
+		const scoringSummary: PlayByPlayEventScore[] = [];
 
 		// Remove any scores that were negated by penalties
-		for (let i = 0; i < scoringSummaryAndRemove.length; i++) {
-			const current = scoringSummaryAndRemove[i];
-			const next = scoringSummaryAndRemove[i + 1];
+		for (let i = 0; i < this.playByPlay.scoringSummary.length; i++) {
+			const current = this.playByPlay.scoringSummary[i];
+			const next = this.playByPlay.scoringSummary[i + 1];
 
+			// Must have been reversed by a penalty
 			if (next && next.type === "removeLastScore") {
 				continue;
 			}
 
-			if (current.scoringSummary) {
-				const y = { ...current };
-				delete y.scoringSummary;
-				scoringSummary.push(y);
+			// No longer need to store this
+			if (current.type === "removeLastScore") {
+				continue;
 			}
+
+			scoringSummary.push(current);
 		}
 
 		const out = {
@@ -256,62 +255,192 @@ class GameSim {
 		return out;
 	}
 
+	doShootoutShot(t: TeamNum) {
+		this.o = t;
+		this.d = t === 0 ? 1 : 0;
+
+		this.updatePlayersOnField("fieldGoal");
+
+		const distance = 50;
+
+		const p = this.getTopPlayerOnField(this.o, "K");
+		this.scrimmage = distance + FIELD_GOAL_DISTANCE_YARDS_ADDED_FROM_SCRIMMAGE;
+
+		// Don't let it ever be 0% or 100%
+		const probMake = helpers.bound(this.probMadeFieldGoal(p), 0.01, 0.99);
+
+		const made = Math.random() < probMake;
+
+		this.recordStat(t, undefined, "sAtt");
+		if (made) {
+			this.recordStat(t, undefined, "sPts");
+		}
+
+		this.playByPlay.logEvent({
+			type: "shootoutShot",
+			t: t,
+			names: [p.name],
+			made,
+			att: this.team[t].stat.sAtt,
+			yds: distance,
+			clock: this.clock,
+		});
+	}
+
+	doShootout() {
+		if (
+			this.shootoutRounds <= 0 ||
+			this.team[0].stat.pts !== this.team[1].stat.pts
+		) {
+			return;
+		}
+
+		this.shootout = true;
+		this.clock = 1; // So fast-forward to end of period stops before the shootout
+		this.team[0].stat.sPts = 0;
+		this.team[0].stat.sAtt = 0;
+		this.team[1].stat.sPts = 0;
+		this.team[1].stat.sAtt = 0;
+
+		const reversedTeamNums = [1, 0] as const;
+
+		this.playByPlay.logEvent({
+			type: "shootoutStart",
+			rounds: this.shootoutRounds,
+			clock: this.clock,
+		});
+
+		SHOOTOUT_ROUNDS: for (let i = 0; i < this.shootoutRounds; i++) {
+			for (const t of reversedTeamNums) {
+				this.doShootoutShot(t);
+
+				if (
+					this.shouldEndShootoutEarly(t, i, [
+						this.team[0].stat.sPts,
+						this.team[1].stat.sPts,
+					])
+				) {
+					break SHOOTOUT_ROUNDS;
+				}
+			}
+		}
+
+		if (this.team[0].stat.sPts === this.team[1].stat.sPts) {
+			this.playByPlay.logEvent({
+				type: "shootoutTie",
+				clock: this.clock,
+			});
+
+			while (this.team[0].stat.sPts === this.team[1].stat.sPts) {
+				for (const t of reversedTeamNums) {
+					this.doShootoutShot(t);
+				}
+			}
+		}
+	}
+
+	isFirstPeriodAfterHalftime(quarter: number) {
+		return this.numPeriods % 2 === 0 && quarter === this.numPeriods / 2 + 1;
+	}
+
+	kickoffAfterEndOfPeriod(quarter: number) {
+		return (
+			this.isFirstPeriodAfterHalftime(quarter + 1) || quarter >= this.numPeriods
+		);
+	}
+
+	logTimeouts() {
+		this.playByPlay.logEvent({
+			type: "timeouts",
+			timeouts: [...this.timeouts],
+		});
+	}
+
 	simRegulation() {
-		const oAfterHalftime = this.d;
 		let quarter = 1;
 
 		while (true) {
-			while (this.clock > 0 || this.awaitingAfterTouchdown) {
+			while (
+				this.clock > 0 ||
+				this.awaitingAfterTouchdown ||
+				this.playUntimedPossession
+			) {
 				this.simPlay();
+			}
+
+			// Who gets the ball after halftime?
+			if (this.isFirstPeriodAfterHalftime(quarter + 1)) {
+				this.timeouts = [3, 3];
+				this.logTimeouts();
+				this.twoMinuteWarningHappened = false;
+
+				this.d = this.lastHalfAwaitingKickoff === 0 ? 1 : 0;
+				this.o = this.lastHalfAwaitingKickoff;
+				this.awaitingKickoff = this.d;
+				this.lastHalfAwaitingKickoff = this.d;
+				this.scrimmage = SCRIMMAGE_KICKOFF;
+			} else if (quarter === this.numPeriods) {
+				break;
 			}
 
 			quarter += 1;
 
-			// Who gets the ball after halftime?
-			if (isFirstPeriodAfterHalftime(quarter, this.numPeriods)) {
-				this.awaitingKickoff = this.o;
-				this.timeouts = [3, 3];
-				this.twoMinuteWarningHappened = false;
-				this.o = oAfterHalftime;
-				this.d = this.o === 0 ? 1 : 0;
-			} else if (quarter > this.numPeriods) {
-				break;
-			}
-
 			this.team[0].stat.ptsQtrs.push(0);
 			this.team[1].stat.ptsQtrs.push(0);
 			this.clock = g.get("quarterLength");
-			this.playByPlay.logEvent("quarter", {
+			this.playByPlay.logEvent({
+				type: "quarter",
 				clock: this.clock,
-				quarter: this.team[0].stat.ptsQtrs.length,
+				quarter,
+				startsWithKickoff: this.kickoffAfterEndOfPeriod(quarter - 1),
 			});
 		}
 	}
 
 	simOvertime() {
-		this.clock = Math.ceil((g.get("quarterLength") * 2) / 3); // 10 minutes by default, but scales
+		const playoffs = g.get("phase") === PHASE.PLAYOFFS;
 
-		if (this.clock === 0) {
-			this.clock = 10;
+		// 10 minutes in regular season, 15 in playoffs
+		this.clock = Math.ceil(g.get("quarterLength") * (playoffs ? 1 : 2 / 3));
+		if (this.clock <= 0) {
+			this.clock = playoffs ? 15 : 10;
 		}
 
 		this.overtime = true;
 		this.overtimes += 1;
-		this.overtimeState = "initialKickoff";
+		if (this.overtimeState === undefined) {
+			// Only set this in first overtime
+			this.overtimeState = "initialKickoff";
+
+			// Coin flip in initial overtime
+			this.awaitingKickoff = Math.random() < 0.5 ? 0 : 1;
+			this.lastHalfAwaitingKickoff = this.awaitingKickoff;
+			this.scrimmage = SCRIMMAGE_KICKOFF;
+		}
 		this.team[0].stat.ptsQtrs.push(0);
 		this.team[1].stat.ptsQtrs.push(0);
 		this.timeouts = [2, 2];
+		this.logTimeouts();
 		this.twoMinuteWarningHappened = false;
-		this.playByPlay.logEvent("overtime", {
+		this.playByPlay.logEvent({
+			type: "overtime",
 			clock: this.clock,
 			overtimes: this.overtimes,
+			startsWithKickoff: this.kickoffAfterEndOfPeriod(
+				this.numPeriods + this.overtimes - 1,
+			),
 		});
-		this.o = Math.random() < 0.5 ? 0 : 1;
-		this.d = this.o === 0 ? 1 : 0;
-		this.awaitingKickoff = this.o;
 
-		// @ts-expect-error
-		while (this.clock > 0 && this.overtimeState !== "over") {
+		this.d = this.lastHalfAwaitingKickoff === 0 ? 1 : 0;
+		this.o = this.lastHalfAwaitingKickoff;
+		this.awaitingKickoff = this.d;
+		this.lastHalfAwaitingKickoff = this.d;
+		this.scrimmage = SCRIMMAGE_KICKOFF;
+
+		while (
+			(this.clock > 0 || this.playUntimedPossession) &&
+			this.overtimeState !== "over"
+		) {
 			this.simPlay();
 		}
 	}
@@ -411,7 +540,7 @@ class GameSim {
 	// Probability that a kickoff should be an onside kick
 	probOnside() {
 		if (this.awaitingAfterSafety) {
-			return 0 * g.get("onsideFactor");
+			return 0;
 		}
 
 		// Roughly 1 surprise onside kick per season, but never in the 4th quarter because some of those could be really stupid
@@ -421,7 +550,7 @@ class GameSim {
 
 		// Does game situation dictate an onside kick in the 4th quarter?
 		if (this.team[0].stat.ptsQtrs.length !== this.numPeriods) {
-			return 0 * g.get("onsideFactor");
+			return 0;
 		}
 
 		const numScoresDown = Math.ceil(
@@ -430,7 +559,7 @@ class GameSim {
 
 		if (numScoresDown <= 0 || numScoresDown >= 4) {
 			// Either winning, or being blown out so there's no point
-			return 0 * g.get("onsideFactor");
+			return 0;
 		}
 
 		if (this.clock < 2) {
@@ -449,15 +578,14 @@ class GameSim {
 			return (numScoresDown / 20) * g.get("onsideFactor");
 		}
 
-		return 0 * g.get("onsideFactor");
+		return 0;
 	}
 
 	hurryUp() {
 		const ptsDown = this.team[this.d].stat.pts - this.team[this.o].stat.pts;
 		const quarter = this.team[0].stat.ptsQtrs.length;
 		return (
-			((isFirstPeriodAfterHalftime(quarter + 1, this.numPeriods) &&
-				this.scrimmage >= 50) ||
+			((this.kickoffAfterEndOfPeriod(quarter) && this.scrimmage >= 50) ||
 				(quarter === this.numPeriods && ptsDown >= 0)) &&
 			this.clock <= 2
 		);
@@ -574,9 +702,11 @@ class GameSim {
 			}
 		}
 
-		// Don't kick a FG when we really need a touchdown!
+		// Don't kick a FG when we really need a touchdown! secondPossession check is for playoff overtime rules
 		const needTouchdown =
-			quarter >= this.numPeriods && ptsDown > 3 && this.clock <= 2;
+			quarter >= this.numPeriods &&
+			ptsDown > 3 &&
+			(this.clock <= 2 || this.overtimeState === "secondPossession");
 
 		const neverPunt =
 			(quarter === this.numPeriods && ptsDown > 0 && this.clock <= 2) ||
@@ -585,17 +715,37 @@ class GameSim {
 		// If there are under 10 seconds left in the half/overtime, maybe try a field goal
 		if (
 			this.clock <= 10 / 60 &&
-			possessionEndsAfterThisPeriod(quarter, this.numPeriods) &&
+			this.kickoffAfterEndOfPeriod(quarter) &&
 			!needTouchdown &&
 			this.probMadeFieldGoal() >= 0.02
 		) {
 			return "fieldGoalLate";
 		}
 
+		// If a field goal will win it in overtime and odds of success are high, go for it
+		if (
+			(this.overtimeState === "secondPossession" ||
+				this.overtimeState === "bothTeamsPossessed") &&
+			ptsDown < 3 &&
+			this.probMadeFieldGoal() >= 0.9
+		) {
+			return "fieldGoal";
+		}
+
 		if (this.down === 4) {
 			// Don't kick a FG when we really need a touchdown!
 			if (!needTouchdown) {
 				const probMadeFieldGoal = this.probMadeFieldGoal();
+
+				// If it's late in the 4th quarter, some scores heavily favor kicking a FG - the FG will take the lead, or when the FG will make the "number of scores" lead much better (like going from up 4 to up 7, or up 6 to up 9)
+				if (
+					probMadeFieldGoal >= 0.5 &&
+					quarter === this.numPeriods &&
+					this.clock <= 6 &&
+					((ptsDown >= 0 && ptsDown <= 2) || (ptsDown <= -4 && ptsDown >= -8))
+				) {
+					return "fieldGoal";
+				}
 
 				// If it's 4th and short, maybe go for it
 				let probGoForIt =
@@ -671,20 +821,34 @@ class GameSim {
 	}
 
 	simPlay() {
-		this.currentPlay = new Play(this);
-
-		if (!this.awaitingAfterTouchdown) {
-			this.playByPlay.logClock({
-				awaitingKickoff: this.awaitingKickoff,
-				clock: this.clock,
-				down: this.down,
-				scrimmage: this.scrimmage,
-				t: this.o,
-				toGo: this.toGo,
-			});
-		}
+		// Reset before calling Play, so Play can set to true if necessary for the next play
+		this.playUntimedPossession = false;
 
 		const playType = this.getPlayType();
+
+		// Set these before creating a new Play so they are updated in there too
+		if (playType === "extraPoint") {
+			this.scrimmage = SCRIMMAGE_EXTRA_POINT;
+			this.down = 1;
+			this.toGo = 100 - this.scrimmage;
+		} else if (playType === "twoPointConversion") {
+			this.scrimmage = SCRIMMAGE_TWO_POINT_CONVERSION;
+			this.down = 1;
+			this.toGo = 100 - this.scrimmage;
+		}
+
+		this.currentPlay = new Play(this);
+
+		this.playByPlay.logClock({
+			awaitingKickoff: this.awaitingKickoff,
+			awaitingAfterTouchdown: this.awaitingAfterTouchdown,
+			clock: this.clock,
+			down: this.down,
+			scrimmage: this.scrimmage,
+			t: this.o,
+			toGo: this.toGo,
+		});
+
 		let dt;
 
 		if (playType === "kickoff") {
@@ -711,61 +875,56 @@ class GameSim {
 			throw new Error(`Unknown playType "${playType}"`);
 		}
 
-		this.currentPlay.commit();
-
-		const quarter = this.team[0].stat.ptsQtrs.length;
 		dt /= 60;
+		const quarter = this.team[0].stat.ptsQtrs.length;
+
+		const clockAtEndOfPlay = this.clock - dt;
+
+		const timeExpiredAtEndOfHalf =
+			clockAtEndOfPlay <= 0 && this.kickoffAfterEndOfPeriod(quarter);
+
+		this.currentPlay.commit(timeExpiredAtEndOfHalf);
 
 		// Two minute warning
+		let twoMinuteWarningHappening = false;
 		if (
-			thisPeriodHasTwoMinuteWarning(quarter, this.numPeriods) &&
-			this.clock - dt <= 2 &&
+			this.kickoffAfterEndOfPeriod(quarter) &&
+			clockAtEndOfPlay <= 2 &&
 			!this.twoMinuteWarningHappened
 		) {
 			this.twoMinuteWarningHappened = true;
 			this.isClockRunning = false;
-			this.playByPlay.logEvent("twoMinuteWarning", {
-				clock: this.clock - dt,
+			this.playByPlay.logEvent({
+				type: "twoMinuteWarning",
+				clock: clockAtEndOfPlay,
 			});
+
+			// So we know it happened this possession, and no random timeout should be used
+			twoMinuteWarningHappening = true;
 		}
 
-		const clockAtEndOfPlay = this.clock - dt;
-		if (clockAtEndOfPlay > 0) {
-			let twoMinuteWarningHappening = false;
-			if (
-				thisPeriodHasTwoMinuteWarning(quarter, this.numPeriods) &&
-				clockAtEndOfPlay <= 2 &&
-				!this.twoMinuteWarningHappened
-			) {
-				twoMinuteWarningHappening = true;
+		if (clockAtEndOfPlay > 0 && !twoMinuteWarningHappening) {
+			// Timeouts - small chance at any time
+			if (Math.random() < 0.01) {
+				this.doTimeout(this.o);
+			} else if (Math.random() < 0.003) {
+				this.doTimeout(this.d);
 			}
 
-			if (!twoMinuteWarningHappening) {
-				// Timeouts - small chance at any time
-				if (Math.random() < 0.01) {
-					this.doTimeout(this.o);
-				} else if (Math.random() < 0.003) {
-					this.doTimeout(this.d);
-				}
+			// Timeouts - late in game when clock is running
+			if (this.kickoffAfterEndOfPeriod(quarter) && this.isClockRunning) {
+				const diff = this.team[this.o].stat.pts - this.team[this.d].stat.pts;
 
-				// Timeouts - late in game when clock is running
-				if (
-					thisPeriodHasTwoMinuteWarning(quarter, this.numPeriods) &&
-					this.isClockRunning
-				) {
-					const diff = this.team[this.o].stat.pts - this.team[this.d].stat.pts;
-
-					// No point in the 4th quarter of a blowout
-					if (diff < 24 || quarter < this.numPeriods) {
-						if (diff > 0) {
-							// If offense is winning, defense uses timeouts when near the end
-							if (this.clock < 2.5) {
-								this.doTimeout(this.d);
-							}
-						} else if (this.clock < 1.5) {
-							// If offense is losing or tied, offense uses timeouts when even nearer the end
-							this.doTimeout(this.o);
+				// No point in the 4th quarter of a blowout
+				if (diff < 24 || quarter < this.numPeriods) {
+					if (diff > 0) {
+						// If offense is winning, defense uses timeouts when near the end
+						if (this.clock < 2.5) {
+							this.doTimeout(this.d);
 						}
+					} else if (this.clock < 1.5) {
+						// If offense is losing or tied, offense uses timeouts when even nearer the end
+						this.doTimeout(this.o);
 					}
 				}
 			}
@@ -791,18 +950,19 @@ class GameSim {
 
 		// Check two minute warning again
 		if (
-			thisPeriodHasTwoMinuteWarning(quarter, this.numPeriods) &&
-			this.clock - dt - dtClockRunning <= 2 &&
+			this.kickoffAfterEndOfPeriod(quarter) &&
+			clockAtEndOfPlay - dtClockRunning <= 2 &&
 			!this.twoMinuteWarningHappened
 		) {
 			this.twoMinuteWarningHappened = true;
 			this.isClockRunning = false;
-			this.playByPlay.logEvent("twoMinuteWarning", {
+			this.playByPlay.logEvent({
+				type: "twoMinuteWarning",
 				clock: 2,
 			});
 
 			// Clock only runs until it hits 2 minutes exactly
-			dtClockRunning = helpers.bound(this.clock - dt - 2, 0, Infinity);
+			dtClockRunning = helpers.bound(clockAtEndOfPlay - 2, 0, Infinity);
 		}
 
 		// Clock
@@ -855,7 +1015,7 @@ class GameSim {
 					? new Set([
 							this.pickPlayer(d, "tackling", positions, 1.5),
 							this.pickPlayer(d, "tackling", positions, 1.5),
-					  ])
+						])
 					: new Set([this.pickPlayer(d, "tackling", positions, 1.5)]);
 
 			this.currentPlay.addEvent({
@@ -871,7 +1031,7 @@ class GameSim {
 		this.team[this.o].compositeRating.receiving = getCompositeFactor({
 			playersOnField: this.playersOnField[this.o],
 			positions: ["WR", "TE", "RB"],
-			orderField: "ovrs.WR",
+			orderFunc: p => p.ovrs.WR,
 			weightsMain: [5, 3, 2],
 			weightsBonus: [0.5, 0.25],
 			valFunc: p => p.ovrs.WR / 100,
@@ -879,7 +1039,7 @@ class GameSim {
 		this.team[this.o].compositeRating.rushing = getCompositeFactor({
 			playersOnField: this.playersOnField[this.o],
 			positions: ["RB", "WR", "QB"],
-			orderField: "ovrs.RB",
+			orderFunc: p => p.ovrs.RB,
 			weightsMain: [1],
 			weightsBonus: [0.1],
 			valFunc: p => (p.ovrs.RB / 100 + p.compositeRating.rushing) / 2,
@@ -889,7 +1049,7 @@ class GameSim {
 		this.team[this.o].compositeRating.passBlocking = getCompositeFactor({
 			playersOnField: this.playersOnField[this.o],
 			positions: ["OL", "TE", "RB"],
-			orderField: "ovrs.OL",
+			orderFunc: p => p.ovrs.OL,
 			weightsMain: [5, 4, 3, 3, 3],
 			weightsBonus: [1, 0.5],
 			valFunc: p => (p.ovrs.OL / 100 + p.compositeRating.passBlocking) / 2,
@@ -897,7 +1057,7 @@ class GameSim {
 		this.team[this.o].compositeRating.runBlocking = getCompositeFactor({
 			playersOnField: this.playersOnField[this.o],
 			positions: ["OL", "TE", "RB"],
-			orderField: "ovrs.OL",
+			orderFunc: p => p.ovrs.OL,
 			weightsMain: [5, 4, 3, 3, 3],
 			weightsBonus: [1, 0.5],
 			valFunc: p => (p.ovrs.OL / 100 + p.compositeRating.runBlocking) / 2,
@@ -905,7 +1065,7 @@ class GameSim {
 		this.team[this.d].compositeRating.passRushing = getCompositeFactor({
 			playersOnField: this.playersOnField[this.d],
 			positions: ["DL", "LB"],
-			orderField: "ovrs.DL",
+			orderFunc: p => p.ovrs.DL,
 			weightsMain: [5, 4, 3, 2, 1],
 			weightsBonus: [],
 			valFunc: p => (p.ovrs.DL / 100 + p.compositeRating.passRushing) / 2,
@@ -913,7 +1073,7 @@ class GameSim {
 		this.team[this.d].compositeRating.runStopping = getCompositeFactor({
 			playersOnField: this.playersOnField[this.d],
 			positions: ["DL", "LB", "S"],
-			orderField: "ovrs.DL",
+			orderFunc: p => p.ovrs.DL,
 			weightsMain: [5, 4, 3, 2, 2, 1, 1],
 			weightsBonus: [0.5, 0.5],
 			valFunc: p => (p.ovrs.DL / 100 + p.compositeRating.runStopping) / 2,
@@ -921,7 +1081,7 @@ class GameSim {
 		this.team[this.d].compositeRating.passCoverage = getCompositeFactor({
 			playersOnField: this.playersOnField[this.d],
 			positions: ["CB", "S", "LB"],
-			orderField: "ovrs.CB",
+			orderFunc: p => p.ovrs.CB,
 			weightsMain: [5, 4, 3, 2],
 			weightsBonus: [1, 0.5],
 			valFunc: p => (p.ovrs.CB / 100 + p.compositeRating.passCoverage) / 2,
@@ -1004,10 +1164,13 @@ class GameSim {
 		}
 
 		this.timeouts[t] -= 1;
+		this.logTimeouts();
 		this.isClockRunning = false;
-		this.playByPlay.logEvent("timeout", {
+		this.playByPlay.logEvent({
+			type: "timeout",
 			clock: this.clock,
 			offense: t === this.o,
+			numLeft: this.timeouts[t],
 			t,
 		});
 	}
@@ -1024,10 +1187,11 @@ class GameSim {
 				type: "onsideKick",
 				kickTo,
 			});
-			this.playByPlay.logEvent("onsideKick", {
+			this.playByPlay.logEvent({
+				type: "onsideKick",
 				clock: this.clock,
-				t: this.o,
 				names: [kicker.name],
+				t: this.o,
 			});
 			const success = Math.random() < 0.1 * g.get("onsideRecoveryFactor");
 
@@ -1064,27 +1228,29 @@ class GameSim {
 				});
 			}
 
-			this.playByPlay.logEvent("onsideKickRecovery", {
+			this.playByPlay.logEvent({
+				type: "onsideKickRecovery",
 				clock: this.clock,
-				t: this.currentPlay.state.current.o,
 				names: [p.name],
 				success,
+				t: this.currentPlay.state.current.o,
 				td,
 			});
 		} else {
 			const kickReturner = this.getTopPlayerOnField(this.d, "KR");
-			const touchback = Math.random() > 0.5;
 			const kickTo = this.awaitingAfterSafety
 				? random.randInt(15, 35)
-				: random.randInt(-9, 10);
+				: random.randInt(-10, 10);
+			const touchback = kickTo <= -10 || (kickTo < 0 && Math.random() < 0.8);
 			this.currentPlay.addEvent({
 				type: "k",
 				kickTo,
 			});
-			this.playByPlay.logEvent("kickoff", {
+			this.playByPlay.logEvent({
+				type: "kickoff",
 				clock: this.clock,
-				t: this.o,
 				names: [kicker.name],
+				t: this.o,
 				touchback,
 				yds: kickTo,
 			});
@@ -1130,10 +1296,11 @@ class GameSim {
 					});
 				}
 
-				this.playByPlay.logEvent("kickoffReturn", {
+				this.playByPlay.logEvent({
+					type: "kickoffReturn",
 					clock: this.clock,
-					t: this.currentPlay.state.current.o,
 					names: [kickReturner.name],
+					t: this.currentPlay.state.current.o,
 					td,
 					yds: returnLength,
 				});
@@ -1163,7 +1330,11 @@ class GameSim {
 		const puntReturner = this.getTopPlayerOnField(this.d, "PR");
 		const adjustment = (punter.compositeRating.punting - 0.6) * 20; // 100 ratings - 8 yd bonus. 0 ratings - 12 yard penalty
 
-		const distance = Math.round(random.truncGauss(44 + adjustment, 8, 25, 90));
+		const maxDistance = 109 - this.scrimmage;
+		const distance = Math.min(
+			Math.round(random.truncGauss(44 + adjustment, 8, 25, 90)),
+			maxDistance,
+		);
 		let dt = random.randInt(5, 9);
 
 		this.checkPenalties("punt");
@@ -1174,10 +1345,11 @@ class GameSim {
 			yds: distance,
 		});
 
-		this.playByPlay.logEvent("punt", {
+		this.playByPlay.logEvent({
+			type: "punt",
 			clock: this.clock,
-			t: this.o,
 			names: [punter.name],
+			t: this.o,
 			touchback,
 			yds: distance,
 		});
@@ -1224,10 +1396,11 @@ class GameSim {
 				});
 			}
 
-			this.playByPlay.logEvent("puntReturn", {
+			this.playByPlay.logEvent({
+				type: "puntReturn",
 				clock: this.clock,
-				t: this.currentPlay.state.current.o,
 				names: [puntReturner.name],
+				t: this.currentPlay.state.current.o,
 				td,
 				yds: returnLength,
 			});
@@ -1244,13 +1417,14 @@ class GameSim {
 		return dt;
 	}
 
-	probMadeFieldGoal(kickerInput?: PlayerGameSim, extraPoint?: boolean) {
+	probMadeFieldGoal(kickerInput?: PlayerGameSim) {
 		const kicker =
 			kickerInput !== undefined
 				? kickerInput
 				: this.team[this.o].depth.K.find(p => !p.injured);
 		let baseProb = 0;
-		let distance = extraPoint ? 33 : 100 - this.scrimmage + 17;
+		let distance =
+			100 - this.scrimmage + FIELD_GOAL_DISTANCE_YARDS_ADDED_FROM_SCRIMMAGE;
 
 		if (!kicker) {
 			// Would take an absurd amount of injuries to get here, but technically possible
@@ -1350,24 +1524,31 @@ class GameSim {
 		const extraPoint = playType === "extraPoint";
 
 		if (extraPoint) {
-			this.playByPlay.logEvent("extraPointAttempt", {
+			this.playByPlay.logEvent({
+				type: "extraPointAttempt",
 				clock: this.clock,
 				t: this.o,
 			});
 		}
 
 		this.updatePlayersOnField("fieldGoal");
-		const penInfo = this.checkPenalties("beforeSnap");
 
-		if (penInfo) {
-			return 0;
+		if (!extraPoint) {
+			const penInfo = this.checkPenalties("beforeSnap");
+
+			if (penInfo) {
+				return 0;
+			}
 		}
 
-		const distance = extraPoint ? 33 : 100 - this.scrimmage + 17;
+		const distance =
+			100 - this.scrimmage + FIELD_GOAL_DISTANCE_YARDS_ADDED_FROM_SCRIMMAGE;
 		const kicker = this.getTopPlayerOnField(this.o, "K");
-		const made = Math.random() < this.probMadeFieldGoal(kicker, extraPoint);
+		const made = Math.random() < this.probMadeFieldGoal(kicker);
 		const dt = extraPoint ? 0 : random.randInt(4, 6);
-		this.checkPenalties("fieldGoal");
+		if (!extraPoint) {
+			this.checkPenalties("fieldGoal");
+		}
 
 		if (extraPoint) {
 			this.currentPlay.addEvent({
@@ -1393,11 +1574,12 @@ class GameSim {
 			}
 		}
 
-		this.playByPlay.logEvent(extraPoint ? "extraPoint" : "fieldGoal", {
+		this.playByPlay.logEvent({
+			type: extraPoint ? "extraPoint" : "fieldGoal",
 			clock: this.clock,
-			t: this.o,
 			made,
 			names: [kicker.name],
+			t: this.o,
 			yds: distance,
 		});
 
@@ -1416,9 +1598,10 @@ class GameSim {
 			t: twoPointConversionTeam,
 		});
 
-		this.playByPlay.twoPointConversionTeam = twoPointConversionTeam;
+		this.twoPointConversionTeam = twoPointConversionTeam;
 
-		this.playByPlay.logEvent("twoPointConversion", {
+		this.playByPlay.logEvent({
+			type: "twoPointConversion",
 			clock: this.clock,
 			t: twoPointConversionTeam,
 		});
@@ -1440,13 +1623,14 @@ class GameSim {
 
 		if (ptsBefore === ptsAfter) {
 			// Must have failed!
-			this.playByPlay.logEvent("twoPointConversionFailed", {
+			this.playByPlay.logEvent({
+				type: "twoPointConversionFailed",
 				clock: this.clock,
 				t: twoPointConversionTeam,
 			});
 		}
 
-		this.playByPlay.twoPointConversionTeam = undefined;
+		this.twoPointConversionTeam = undefined;
 
 		return 0;
 	}
@@ -1467,10 +1651,11 @@ class GameSim {
 			yds: spotYds,
 		});
 
-		this.playByPlay.logEvent("fumble", {
+		this.playByPlay.logEvent({
+			type: "fumble",
 			clock: this.clock,
-			t: o,
 			names: [pFumbled.name, pForced.name],
+			t: o,
 		});
 
 		const lost = Math.random() > 0.5;
@@ -1521,15 +1706,18 @@ class GameSim {
 			}
 		}
 
-		this.playByPlay.logEvent("fumbleRecovery", {
+		this.playByPlay.logEvent({
+			type: "fumbleRecovery",
 			clock: this.clock,
 			lost,
-			t: tRecovered,
 			names: [pRecovered.name],
 			safety,
+			t: tRecovered,
 			td,
 			touchback,
+			twoPointConversionTeam: this.twoPointConversionTeam,
 			yds,
+			ydsBefore: spotYds,
 		});
 
 		if (fumble) {
@@ -1539,13 +1727,21 @@ class GameSim {
 		return dt;
 	}
 
-	doInterception(qb: PlayerGameSim, ydsPass: number) {
+	doInterception(qb: PlayerGameSim, ydsPass: number, p: PlayerGameSim) {
+		this.playByPlay.logEvent({
+			type: "interception",
+			clock: this.clock,
+			names: [p.name],
+			t: this.currentPlay.state.current.d,
+			twoPointConversionTeam: this.twoPointConversionTeam,
+			yds: ydsPass,
+		});
+
 		this.currentPlay.addEvent({
 			type: "possessionChange",
 			yds: ydsPass,
 		});
 
-		const p = this.pickPlayer(this.d, "passCoverage");
 		let ydsRaw = Math.round(random.truncGauss(4, 6, -5, 15));
 
 		if (Math.random() < 0.075) {
@@ -1581,12 +1777,14 @@ class GameSim {
 			});
 		}
 
-		this.playByPlay.logEvent("interception", {
+		this.playByPlay.logEvent({
+			type: "interceptionReturn",
 			clock: this.clock,
-			t: this.currentPlay.state.current.o,
 			names: [p.name],
+			t: this.currentPlay.state.current.o,
 			td,
 			touchback,
+			twoPointConversionTeam: this.twoPointConversionTeam,
 			yds,
 		});
 
@@ -1632,11 +1830,12 @@ class GameSim {
 			this.doSafety(p);
 		}
 
-		this.playByPlay.logEvent("sack", {
+		this.playByPlay.logEvent({
+			type: "sack",
 			clock: this.clock,
-			t: this.currentPlay.state.initial.o,
 			names: [qb.name, p.name],
 			safety,
+			t: this.currentPlay.state.initial.o,
 			yds,
 		});
 
@@ -1653,9 +1852,10 @@ class GameSim {
 		);
 	}
 
-	probInt(qb: PlayerGameSim) {
+	probInt(qb: PlayerGameSim, defender: PlayerGameSim) {
 		return (
-			((((0.02 * this.team[this.d].compositeRating.passCoverage) /
+			((((0.004 * this.team[this.d].compositeRating.passCoverage +
+				0.022 * defender.compositeRating.passCoverage) /
 				(0.5 *
 					(qb.compositeRating.passingVision +
 						qb.compositeRating.passingAccuracy))) *
@@ -1691,7 +1891,7 @@ class GameSim {
 	probScramble(qb?: PlayerGameSim) {
 		const qbOvrRB = qb?.ovrs.RB ?? 0;
 		return (
-			(0.01 + Math.max(0, (0.4 * (qbOvrRB - 30)) / 100)) *
+			(0.01 + Math.max(0, (0.35 * (qbOvrRB - 30)) / 100)) *
 			g.get("scrambleFactor")
 		);
 	}
@@ -1711,14 +1911,15 @@ class GameSim {
 		this.currentPlay.addEvent({
 			type: "dropback",
 		});
-		this.playByPlay.logEvent("dropback", {
+		this.playByPlay.logEvent({
+			type: "dropback",
 			clock: this.clock,
-			t: o,
 			names: [qb.name],
+			t: o,
 		});
 		let dt = random.randInt(2, 6);
 
-		if (Math.random() < this.probFumble(qb)) {
+		if (Math.random() < 0.75 && Math.random() < this.probFumble(qb)) {
 			const yds = this.currentPlay.boundedYds(random.randInt(-1, -10));
 			return dt + this.doFumble(qb, yds);
 		}
@@ -1738,12 +1939,25 @@ class GameSim {
 			Math.random() < 0.2 ? "catching" : "gettingOpen",
 			["WR", "TE", "RB"],
 		);
+
+		// RB passes are often short, so 50% chance of a decrease in yardage, which is more severe for players with low gettingOpen
+		const rbFactor =
+			this.playersOnField[o].RB?.includes(target) && Math.random() < 0.75
+				? target.compositeRating.gettingOpen
+				: 1;
+
 		let ydsRaw = Math.round(
 			random.truncGauss(
-				8.2 *
-					(this.team[o].compositeRating.passBlocking /
-						this.team[d].compositeRating.passRushing),
-				7,
+				// Bound is so (in extreme contrived cases like 0 ovr teams) meanYds can't go too far above/below the truncGauss limits
+				helpers.bound(
+					rbFactor *
+						8.3 *
+						(this.team[o].compositeRating.passBlocking /
+							this.team[d].compositeRating.passRushing),
+					-5,
+					100,
+				),
+				rbFactor * 7,
 				-5,
 				100,
 			),
@@ -1763,9 +1977,9 @@ class GameSim {
 
 		const yds = this.currentPlay.boundedYds(ydsRaw);
 
-		const defender = this.pickPlayer(d, "passCoverage", ["CB", "S", "LB"]);
+		const defender = this.pickPlayer(d, "passCoverage", undefined, 2);
 		const complete = Math.random() < this.probComplete(qb, target, defender);
-		const interception = Math.random() < this.probInt(qb);
+		const interception = Math.random() < this.probInt(qb, defender);
 
 		this.checkPenalties("pass", {
 			ballCarrier: target,
@@ -1780,7 +1994,7 @@ class GameSim {
 		});
 
 		if (interception) {
-			dt += this.doInterception(qb, yds);
+			dt += this.doInterception(qb, yds, defender);
 		} else {
 			dt += Math.abs(yds) / 20;
 
@@ -1794,18 +2008,20 @@ class GameSim {
 
 				// Don't log here, because we need to log all the stats first, otherwise live box score will update slightly out of order
 				const completeEvent = {
+					type: "passComplete",
 					clock: this.clock,
-					t: o,
-					names: [qb.name, target.name],
+					names: [qb.name, target.name] as string[],
 					safety,
+					t: o,
 					td,
+					twoPointConversionTeam: this.twoPointConversionTeam,
 					yds,
-				};
+				} as const;
 
 				// Fumble after catch... only if nothing else is going on, too complicated otherwise
 				if (!td && !safety) {
 					if (Math.random() < this.probFumble(target)) {
-						this.playByPlay.logEvent("passComplete", completeEvent);
+						this.playByPlay.logEvent(completeEvent);
 						return dt + this.doFumble(target, 0);
 					}
 				}
@@ -1818,7 +2034,7 @@ class GameSim {
 					});
 				}
 
-				this.playByPlay.logEvent("passComplete", completeEvent);
+				this.playByPlay.logEvent(completeEvent);
 
 				if (safety) {
 					this.doSafety();
@@ -1833,10 +2049,11 @@ class GameSim {
 					defender: Math.random() < 0.28 ? defender : undefined,
 				});
 
-				this.playByPlay.logEvent("passIncomplete", {
+				this.playByPlay.logEvent({
+					type: "passIncomplete",
 					clock: this.clock,
-					t: o,
 					names: [qb.name, target.name],
+					t: o,
 					yds,
 				});
 			}
@@ -1875,19 +2092,29 @@ class GameSim {
 			}
 		}
 
+		// Scrambles tend to be longer runs
+		const scrambleModifier = qbScramble ? 3 : 1;
+
 		const p = this.pickPlayer(o, "rushing", positions);
 		const qb = this.getTopPlayerOnField(o, "QB");
-		this.playByPlay.logEvent("handoff", {
+		this.playByPlay.logEvent({
+			type: "handoff",
 			clock: this.clock,
 			t: o,
 			names: p === qb ? [qb.name] : [qb.name, p.name],
 		});
-		const meanYds =
-			(3.5 *
-				0.5 *
-				(p.compositeRating.rushing +
-					this.team[o].compositeRating.runBlocking)) /
-			this.team[d].compositeRating.runStopping;
+
+		// Bound is so (in extreme contrived cases like 0 ovr teams) meanYds can't go too far above/below the truncGauss limits
+		const meanYds = helpers.bound(
+			(scrambleModifier *
+				(3.5 *
+					0.5 *
+					(p.compositeRating.rushing +
+						this.team[o].compositeRating.runBlocking))) /
+				this.team[d].compositeRating.runStopping,
+			-5,
+			15,
+		);
 		let ydsRaw = Math.round(random.truncGauss(meanYds, 6, -5, 15));
 
 		if (Math.random() < 0.01) {
@@ -1910,15 +2137,6 @@ class GameSim {
 			yds,
 		});
 
-		// Fumble after run... only if nothing else is going on, too complicated otherwise
-		if (!td && !safety) {
-			if (Math.random() < this.probFumble(p)) {
-				this.awaitingAfterTouchdown = false; // In case set by this.advanceYds
-
-				return dt + this.doFumble(p, 0);
-			}
-		}
-
 		if (td) {
 			this.currentPlay.addEvent({
 				type: "rusTD",
@@ -1932,14 +2150,25 @@ class GameSim {
 			});
 		}
 
-		this.playByPlay.logEvent("run", {
+		this.playByPlay.logEvent({
+			type: "run",
 			clock: this.clock,
-			t: o,
 			names: [p.name],
 			safety,
+			t: o,
 			td,
+			twoPointConversionTeam: this.twoPointConversionTeam,
 			yds,
 		});
+
+		// Fumble after run... only if nothing else is going on, too complicated otherwise
+		if (!td && !safety) {
+			if (Math.random() < this.probFumble(p)) {
+				this.awaitingAfterTouchdown = false; // In case set by this.advanceYds
+
+				return dt + this.doFumble(p, 0);
+			}
+		}
 
 		return dt;
 	}
@@ -1959,10 +2188,12 @@ class GameSim {
 			yds,
 		});
 
-		this.playByPlay.logEvent("kneel", {
+		this.playByPlay.logEvent({
+			type: "kneel",
 			clock: this.clock,
-			t: o,
 			names: [qb.name],
+			t: o,
+			yds,
 		});
 
 		const dt = random.randInt(42, 44);
@@ -1988,7 +2219,7 @@ class GameSim {
 			playYds: 0,
 		},
 	): boolean {
-		// No penalties during two point conversion, because it is not handled well currently (no logic to support retrying conversion/xp)
+		// No penalties during two-point conversion, because it is not handled well currently (no logic to support retrying conversion/xp)
 		if (this.currentPlay.state.current.twoPointConversionTeam !== undefined) {
 			return false;
 		}
@@ -2128,7 +2359,8 @@ class GameSim {
 				tackOn: penInfo.tackOn,
 			});
 
-			this.playByPlay.logEvent("flag", {
+			this.playByPlay.logEvent({
+				type: "flag",
 				clock: this.clock,
 			});
 		}
@@ -2219,11 +2451,12 @@ class GameSim {
 
 					p.injured = true;
 					p.newInjury = true;
-					this.playByPlay.logEvent("injury", {
+					this.playByPlay.logEvent({
+						type: "injury",
 						clock: this.clock,
-						t,
-						names: [`${p.pos} ${p.name} (ABBREV)`],
 						injuredPID: p.id,
+						names: [`${p.pos} ${p.name}`],
+						t,
 					});
 				}
 			}
@@ -2282,18 +2515,23 @@ class GameSim {
 				this.team[t].stat[s] += signedAmount;
 			}
 
-			if (s === "pts") {
-				this.team[t].stat.ptsQtrs[qtr] += signedAmount;
-				this.playByPlay.logStat(qtr, t, undefined, "pts", signedAmount);
-
-				if (remove) {
-					this.playByPlay.removeLastScore();
-				}
-			}
-
 			if (p !== undefined && s !== "min") {
 				const logAmount = isLng ? p.stat[s] : signedAmount;
-				this.playByPlay.logStat(qtr, t, p.id, s, logAmount);
+				this.playByPlay.logStat(t, p.id, s, logAmount);
+			} else if (
+				p === undefined &&
+				(s === "pts" ||
+					s === "pen" ||
+					s === "penYds" ||
+					s === "sPts" ||
+					s === "sAtt")
+			) {
+				// Team points, and also team penalties like delay of game, for the team penalty display at the top
+				this.playByPlay.logStat(t, undefined, s, signedAmount);
+
+				if (s === "pts") {
+					this.team[t].stat.ptsQtrs[qtr] += signedAmount;
+				}
 			}
 		}
 	}

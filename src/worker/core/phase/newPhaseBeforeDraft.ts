@@ -1,4 +1,4 @@
-import { PLAYER } from "../../../common";
+import { ACCOUNT_API_URL, PLAYER, fetchWrapper } from "../../../common";
 import { draft, player, season, team, league } from "..";
 import { idb } from "../../db";
 import {
@@ -12,6 +12,7 @@ import {
 	logEvent,
 	random,
 	orderTeams,
+	env,
 } from "../../util";
 import type {
 	Conditions,
@@ -22,6 +23,8 @@ import type {
 	GameAttributesLeague,
 } from "../../../common/types";
 import setGameAttributes from "../league/setGameAttributes";
+import { doExpand, doRelocate } from "./relocateExpand";
+import addAward from "../player/addAward";
 
 const INFLATION_GAME_ATTRIBUTES = [
 	"salaryCap",
@@ -240,9 +243,10 @@ const doThanosMode = async (conditions: Conditions) => {
 		if (numPlayers === 0) {
 			text += "Somehow your team did not lose any players.";
 		} else {
-			text += `Your team lost ${numPlayers} player${
-				numPlayers === 1 ? "" : "s"
-			}: `;
+			text += `Your team lost ${numPlayers} ${helpers.plural(
+				"player",
+				numPlayers,
+			)}: `;
 			for (let i = 0; i < numPlayers; i++) {
 				const p = userSnappedPlayers[i];
 				if (i > 0 && numPlayers === 2) {
@@ -339,7 +343,7 @@ const newPhaseBeforeDraft = async (
 		const players = await idb.cache.players.indexGetAll("playersByTid", t.tid);
 
 		for (const p of players) {
-			p.awards.push({
+			addAward(p, {
 				season: g.get("season"),
 				type: "Won Championship",
 			});
@@ -402,7 +406,9 @@ const newPhaseBeforeDraft = async (
 		await doSisyphusMode(conditions);
 	}
 
-	if (!g.get("repeatSeason")) {
+	const repeatSeasonType = g.get("repeatSeason")?.type;
+
+	if (repeatSeasonType !== "playersAndRosters") {
 		// Do annual tasks for each player, like checking for retirement
 		const players = await idb.cache.players.indexGetAll("playersByTid", [
 			PLAYER.FREE_AGENT,
@@ -415,43 +421,46 @@ const newPhaseBeforeDraft = async (
 		for (const p of players) {
 			let update = false;
 
-			if (player.shouldRetire(p)) {
-				if (p.tid >= 0) {
-					if (!retiredPlayersByTeam[p.tid]) {
-						retiredPlayersByTeam[p.tid] = [];
+			if (!repeatSeasonType) {
+				if (player.shouldRetire(p)) {
+					if (p.tid >= 0) {
+						if (!retiredPlayersByTeam[p.tid]) {
+							retiredPlayersByTeam[p.tid] = [];
+						}
+						retiredPlayersByTeam[p.tid].push(p);
 					}
-					retiredPlayersByTeam[p.tid].push(p);
-				}
-				await player.retire(p, conditions);
-				update = true;
-			}
-
-			// Update "free agent years" counter and retire players who have been free agents for more than one years
-			if (p.tid === PLAYER.FREE_AGENT) {
-				const age = g.get("season") - p.born.year;
-				if (p.yearsFreeAgent >= 1 && age >= g.get("minRetireAge")) {
 					await player.retire(p, conditions);
 					update = true;
-				} else {
-					p.yearsFreeAgent += 1;
 				}
 
-				update = true;
-			} else if (p.tid >= 0 && p.yearsFreeAgent > 0) {
-				p.yearsFreeAgent = 0;
-				update = true;
+				// Update "free agent years" counter and retire players who have been free agents for more than one years
+				if (p.tid === PLAYER.FREE_AGENT) {
+					const age = g.get("season") - p.born.year;
+					if (p.yearsFreeAgent >= 1 && age >= g.get("minRetireAge")) {
+						await player.retire(p, conditions);
+						update = true;
+					} else {
+						p.yearsFreeAgent += 1;
+					}
+
+					update = true;
+				} else if (p.tid >= 0 && p.yearsFreeAgent > 0) {
+					p.yearsFreeAgent = 0;
+					update = true;
+				}
 			}
 
-			// Heal injures
+			// Heal injures - this happens for repeatSeasonType === "players" too!
 			if (p.injury.gamesRemaining > 0 || p.injury.type !== "Healthy") {
+				const numGames = defaultGameAttributes.numGames[0].value;
 				// This doesn't use g.get("numGames") because that would unfairly make injuries last longer if it was lower - if anything injury duration should be modulated based on that, but oh well
-				if (p.injury.gamesRemaining <= defaultGameAttributes.numGames) {
+				if (p.injury.gamesRemaining <= numGames) {
 					p.injury = {
 						type: "Healthy",
 						gamesRemaining: 0,
 					};
 				} else {
-					p.injury.gamesRemaining -= defaultGameAttributes.numGames;
+					p.injury.gamesRemaining -= numGames;
 				}
 
 				update = true;
@@ -502,12 +511,14 @@ const newPhaseBeforeDraft = async (
 			await genMessage(response.deltas, response.cappedDeltas);
 		}
 
-		if (
-			g.get("draftType") === "noLottery" ||
-			g.get("draftType") === "noLotteryReverse" ||
-			g.get("draftType") === "random"
-		) {
-			await draft.genOrder(false, conditions);
+		if (!repeatSeasonType) {
+			if (
+				g.get("draftType") === "noLottery" ||
+				g.get("draftType") === "noLotteryReverse" ||
+				g.get("draftType") === "random"
+			) {
+				await draft.genOrder(false, conditions);
+			}
 		}
 	}
 
@@ -516,6 +527,19 @@ const newPhaseBeforeDraft = async (
 	}
 
 	await doInflation(conditions);
+
+	// Randomize order of doRelocate and doExpand, because we want one to block the other but not always the same one
+	if (Math.random() > 0.5) {
+		const relocated = await doRelocate();
+		if (!relocated) {
+			await doExpand();
+		}
+	} else {
+		const expanded = await doExpand();
+		if (!expanded) {
+			await doRelocate();
+		}
+	}
 
 	// Don't redirect if we're viewing a live game now
 	let redirect;
@@ -543,6 +567,18 @@ const newPhaseBeforeDraft = async (
 		],
 		conditions,
 	);
+	if (env.enableLogging) {
+		fetchWrapper({
+			url: `${ACCOUNT_API_URL}/log_event.php`,
+			method: "POST",
+			data: {
+				sport: process.env.SPORT,
+				type: "completed_season",
+			},
+			credentials: "include",
+		});
+	}
+
 	return {
 		redirect,
 		updateEvents: ["playerMovement"],

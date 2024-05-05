@@ -15,7 +15,7 @@ const Storage = () => {
 		let mounted = true;
 
 		const check = async () => {
-			if (navigator.storage && navigator.storage.persisted) {
+			if (navigator.storage?.persisted) {
 				const persisted = await navigator.storage.persisted();
 
 				if (!mounted) {
@@ -42,7 +42,7 @@ const Storage = () => {
 	const onClick = useCallback(async (event: MouseEvent) => {
 		event.preventDefault();
 
-		if (navigator.storage && navigator.storage.persist) {
+		if (navigator.storage?.persist) {
 			setStatus("loading...");
 
 			const persisted = await navigator.storage.persist();
@@ -84,8 +84,9 @@ const Storage = () => {
 			{status === "failed" ? (
 				<p>
 					Sorry, this feature can be tricky to get working in some browsers. If
-					you bookmark this page, it might work if you press "Enable" again.
-					Otherwise, check back later after playing more and maybe it will work.
+					you bookmark this page or add {GAME_NAME} to your home screen, it
+					might work if you press "Enable" again. Otherwise, check back later
+					after playing more and maybe it will work.
 				</p>
 			) : null}
 			{status === "loading..." ||

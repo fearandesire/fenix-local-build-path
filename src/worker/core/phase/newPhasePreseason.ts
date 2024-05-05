@@ -12,14 +12,15 @@ import type {
 	Conditions,
 	PhaseReturn,
 	RealTeamInfo,
+	TeamSeason,
 } from "../../../common/types";
-import { groupBy } from "../../../common/groupBy";
+import { groupBy } from "../../../common/utils";
 
 const newPhasePreseason = async (
 	conditions: Conditions,
 ): Promise<PhaseReturn> => {
 	const repeatSeason = g.get("repeatSeason");
-	if (!repeatSeason) {
+	if (repeatSeason?.type !== "playersAndRosters") {
 		await freeAgents.autoSign();
 	}
 	await league.setGameAttributes({
@@ -32,10 +33,6 @@ const newPhasePreseason = async (
 	]);
 
 	const teams = await idb.cache.teams.getAll();
-	const teamSeasons = await idb.cache.teamSeasons.indexGetAll(
-		"teamSeasonsBySeasonTid",
-		[[g.get("season") - 1], [g.get("season")]],
-	);
 
 	const realTeamInfo = (await idb.meta.get("attributes", "realTeamInfo")) as
 		| RealTeamInfo
@@ -50,11 +47,12 @@ const newPhasePreseason = async (
 	> = {};
 	const sameRegionOverrides: Record<string, string | undefined> = {
 		"San Jose": "San Francisco",
+		"Golden State": "San Francisco",
 		Brooklyn: "New York",
 	};
 
 	let updatedTeams = false;
-	let scoutingRank: number | undefined;
+	let scoutingLevel: number | undefined;
 	for (const t of teams) {
 		// Check if we need to override team info based on a season-specific entry in realTeamInfo
 		if (realTeamInfo && t.srID && realTeamInfo[t.srID]) {
@@ -73,7 +71,7 @@ const newPhasePreseason = async (
 				await idb.cache.teams.put(t);
 
 				if (t.region !== old.region) {
-					const text = `the ${old.region} ${
+					const text = `The ${old.region} ${
 						old.name
 					} are now the <a href="${helpers.leagueUrl([
 						"roster",
@@ -82,7 +80,7 @@ const newPhasePreseason = async (
 					])}">${t.region} ${t.name}</a>.`;
 
 					logEvent({
-						text: helpers.upperCaseFirstLetter(text),
+						text,
 						type: "teamRelocation",
 						tids: [t.tid],
 						showNotification: false,
@@ -126,26 +124,26 @@ const newPhasePreseason = async (
 			continue;
 		}
 
-		const tid = t.tid;
-		// Only actually need 3 seasons for userTid, but get it for all just in case there is a
-		// skipped season (alternatively could use cursor to just find most recent season, but this
-		// is not performance critical code)
-		const teamSeasons2 = await idb.getCopies.teamSeasons(
-			{
-				tid,
-				seasons: [g.get("season") - 3, g.get("season") - 1],
-			},
-			"noCopyCache",
-		);
-		const prevSeason = teamSeasons2.at(-1);
-
-		// Only need scoutingRank for the user's team to calculate fuzz when ratings are updated below.
+		let prevSeason: TeamSeason | undefined;
+		// Only need scoutingLevel for the user's team to calculate fuzz when ratings are updated below.
 		// This is done BEFORE a new season row is added.
-		if (tid === g.get("userTid")) {
-			scoutingRank = finances.getRankLastThree(
-				teamSeasons2,
-				"expenses",
-				"scouting",
+		if (t.tid === g.get("userTid")) {
+			const teamSeasons = await idb.getCopies.teamSeasons(
+				{
+					tid: t.tid,
+					seasons: [g.get("season") - 3, g.get("season") - 1],
+				},
+				"noCopyCache",
+			);
+			scoutingLevel = await finances.getLevelLastThree("scouting", {
+				t,
+				teamSeasons,
+			});
+			prevSeason = teamSeasons.at(-1);
+		} else {
+			prevSeason = await idb.cache.teamSeasons.indexGet(
+				"teamSeasonsByTidSeason",
+				[t.tid, g.get("season") - 1],
 			);
 		}
 
@@ -180,7 +178,7 @@ const newPhasePreseason = async (
 		newSeason.pop = t.pop;
 
 		await idb.cache.teamSeasons.add(newSeason);
-		await idb.cache.teamStats.add(team.genStatsRow(tid));
+		await idb.cache.teamStats.add(team.genStatsRow(t.tid));
 
 		if (t.disabled) {
 			// Active teams are persisted below
@@ -197,15 +195,28 @@ const newPhasePreseason = async (
 			local.autoPlayUntil ||
 			g.get("spectator")
 		) {
-			await team.autoBudgetSettings(t, popRanks[i]);
+			await team.resetTicketPrice(t, popRanks[i]);
+
+			// Sometimes update budget items for AI teams
+			for (const key of [
+				"scouting",
+				"coaching",
+				"health",
+				"facilities",
+			] as const) {
+				if (Math.random() < 0.5) {
+					t.budget[key] = finances.defaultBudgetLevel(popRanks[i]);
+				}
+			}
+
 			t.adjustForInflation = true;
 			t.autoTicketPrice = true;
 			t.keepRosterSorted = true;
 			t.playThroughInjuries = DEFAULT_PLAY_THROUGH_INJURIES;
+
 			await idb.cache.teams.put(t);
 		}
 	}
-	await finances.updateRanks(["budget"]);
 
 	if (updatedTeams) {
 		await league.setGameAttributes({
@@ -220,18 +231,25 @@ const newPhasePreseason = async (
 		});
 	}
 
-	if (scoutingRank === undefined) {
-		throw new Error("scoutingRank should be defined");
+	if (scoutingLevel === undefined) {
+		throw new Error("scoutingLevel should be defined");
 	}
 
-	const coachingRanks: Record<number, number> = {};
-	for (const teamSeason of teamSeasons) {
-		coachingRanks[teamSeason.tid] = finances.getRankLastThree(
-			[teamSeason],
-			"expenses",
-			"coaching",
+	const coachingLevels: Record<number, number> = {};
+	for (const t of teams) {
+		const teamSeasons = await idb.getCopies.teamSeasons(
+			{
+				tid: t.tid,
+				seasons: [g.get("season") - 3, g.get("season") - 1],
+			},
+			"noCopyCache",
 		);
+		coachingLevels[t.tid] = await finances.getLevelLastThree("coaching", {
+			t,
+			teamSeasons,
+		});
 	}
+
 	const players = await idb.cache.players.indexGetAll("playersByTid", [
 		PLAYER.FREE_AGENT,
 		Infinity,
@@ -311,22 +329,24 @@ const newPhasePreseason = async (
 
 		if (!repeatSeason) {
 			// Update ratings
-			player.addRatingsRow(p, scoutingRank);
-			await player.develop(p, 1, false, coachingRanks[p.tid]);
+			player.addRatingsRow(p, scoutingLevel);
+			await player.develop(p, 1, false, coachingLevels[p.tid]);
 		} else {
-			const info = repeatSeason.players[p.pid];
-			if (info) {
-				p.tid = info.tid;
-				p.injury = helpers.deepCopy(info.injury);
-				p.contract = helpers.deepCopy(info.contract);
+			if (repeatSeason.type === "playersAndRosters") {
+				const info = repeatSeason.players[p.pid];
+				if (info) {
+					p.tid = info.tid;
+					p.injury = helpers.deepCopy(info.injury);
+					p.contract = helpers.deepCopy(info.contract);
 
-				p.contract.exp += g.get("season") - repeatSeason.startingSeason;
-				p.salaries.push({
-					season: p.contract.exp,
-					amount: p.contract.amount,
-				});
-			} else {
-				p.tid = PLAYER.FREE_AGENT;
+					p.contract.exp += g.get("season") - repeatSeason.startingSeason;
+					p.salaries.push({
+						season: p.contract.exp,
+						amount: p.contract.amount,
+					});
+				} else {
+					p.tid = PLAYER.FREE_AGENT;
+				}
 			}
 
 			// First entry for last season, so it skips injuries
@@ -361,7 +381,7 @@ const newPhasePreseason = async (
 		await idb.cache.players.put(p);
 	}
 
-	if (!repeatSeason) {
+	if (repeatSeason?.type !== "playersAndRosters") {
 		await freeAgents.normalizeContractDemands({
 			type: "dummyExpiringContracts",
 
