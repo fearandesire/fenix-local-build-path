@@ -1,6 +1,9 @@
 name: Node CI
 
-on: [push]
+on: [push, pull_request]
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -16,7 +19,7 @@ jobs:
         node-version: '20.x'
         cache: 'pnpm'
     - name: Install dependencies
-      run: pnpm install
+      run: pnpm install --frozen-lockfile
     - name: ESLint
       run: pnpm run lint-js
     - name: TypeScript
