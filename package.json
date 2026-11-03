@@ -154,7 +154,7 @@
 		"prettier": "^3.2.5",
 		"purgecss": "^6.0.0",
 		"replace": "^1.2.2",
-		"rollup": "^4.59.1",
+		"rollup": "^4.60.0",
 		"rollup-plugin-blacklist": "^1.0.1",
 		"rollup-plugin-visualizer": "^5.12.0",
 		"sass": "^1.76.0",
